@@ -1,3 +1,13 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+'''
+Utility function for the BioMag Dementia Challenge.
+
+(c) 2021 Marc Steffen Seibel, Technische Universitaet Ilmenau
+'''
+
+
 from difflib import get_close_matches
 from distutils.version import LooseVersion
 import operator
@@ -14,8 +24,9 @@ import pip
 import pandas as pd
 import warnings
 from scipy import io
-
+import pathlib
 import functools
+
 def deprecated(func):
     """This is a decorator which can be used to mark functions
     as deprecated. It will result in a warning being emitted
@@ -377,6 +388,37 @@ def get_site_from_condition_number(condition,subject_number,direc= r'dataframes\
     assert site in ['A','B']
     return site
 
+def get_site_from_json(condition,number,filepath='.'):
+    path = pathlib.Path(filepath)
+    if condition=='test':
+        with open(path / 'sites_test.json','r') as f:
+            site_dict = json.load(f)
+    elif condition=='control':
+        with open(path / 'sites_control.json','r') as f:
+            site_dict = json.load(f)
+    elif condition=='dementia':
+        with open(path / 'sites_dementia.json','r') as f:
+            site_dict = json.load(f)
+    elif condition=='mci':
+        with open(path / 'sites_mci.json','r') as f:
+            site_dict = json.load(f)
+    elif condition=='train':
+        with open(path / 'sites_train.json','r') as f:
+            site_dict = json.load(f)
+    else:
+        raise ValueError("Wrong condition provided.")
+    return site_dict['{}{:03d}'.format(condition,number)]
+
+def get_site(*args,**kwargs):
+    if 'fs' in kwargs.keys():
+        return get_site_from_fs(kwargs['fs'])
+    elif 'condition' in kwargs.keys():
+        condition=kwargs['condition']
+        number = kwargs['number']
+        return get_site_from_json(condition,number)
+    else:
+        raise ValueError(kwargs.keys())
+        
 def get_stable_channels(matches,order):
     """
     returns the channels that have order+1 matches
@@ -581,7 +623,7 @@ def time2samples(time_container,fs):
     return int(time_container.value*fs)
     
 
-def get_site(fs):
+def get_site_from_fs(fs):
     if fs==1000:
         site = 'A'
     elif fs==2000:
@@ -590,7 +632,7 @@ def get_site(fs):
         raise ValueError("Recording site is determined from sampling\
             frequency which is either 1000 (site A) or 2000 (site B).")
     return site
-get_site_from_fs = get_site
+
 
 class TimeData(float):
     def __new__(cls,value,*a,**k):
