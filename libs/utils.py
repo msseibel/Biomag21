@@ -379,6 +379,8 @@ def correct_rotation(rawB):
 
     
 def get_site_from_condition_number(condition,subject_number,direc= r'dataframes\maxwell_and_temporal'):
+    warnings.warn("Method is deprecated us 'get_site'.")
+    return get_site('foo',**{'condition':condition,'number':subject_number})
     assert condition in ['mci','dementia','control']
     maxwelldf = os.listdir(direc)
     site = [f for f in maxwelldf if condition in f and '{:03d}'.format(subject_number) in f]
