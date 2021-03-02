@@ -140,34 +140,78 @@ class PairwiseChannelAdd(tf.keras.layers.Layer):
         num_channels = K.int_shape(inputs)[source_axis]
         # consider tf.unstack
         X_split = tf.split(inputs,num_channels,source_axis)
-        print('Building layer. This may take some time.')
+        
         #print(X_split)
-        max_pairwise_similarity = []
+        
+        #max_pairwise_similarity = tf.TensorArray(tf.float32, num_channels-1)
 
-        for k in range(num_channels)[:-1]:                
-            #print('before concat: ',pairwise_sim_ij)
-            # throws error for mode=='half' must add if len(~)!=0
-            if self.mode=='half':
-                pairwise_sim_ij = X_split[slice(k+1,160,1)]+X_split[k]
-            elif self.mode=='off-diag':
-                right = X_split[slice(k+1,160,1)] + X_split[k]
-                left  = X_split[slice(0,k+1,1)]   + X_split[k]
-                pairwise_sim_ij = tf.concat([right,left],axis=0)
-            else:
-                raise ValueError
-            #print('after: ',pairwise_sim_ij)
-            if self.aggregation=='max':
-                max_pairwise_similarity+=[tf.reduce_max(pairwise_sim_ij,axis=0)]
-            elif self.aggregation == 'mean':
-                max_pairwise_similarity+=[tf.reduce_mean(pairwise_sim_ij,axis=0)]
-            elif self.aggregation==None:
-                max_pairwise_similarity+=[pairwise_sim_ij]
-            else:
-                raise ValueError
-        #print(max_pairwise_similarity.shape) 
-        return tf.concat(max_pairwise_similarity,axis=source_axis)
+        #print(max_pairwise_similarity.shape)
+        #return tf.concat(max_pairwise_similarity,axis=source_axis)
+        return _pairwise_add(X_split,num_channels,source_axis,self.mode,self.aggregation)
     
-    
+#@tf.function    
+def _pairwise_add_depr(X_split,num_channels,source_axis,mode,aggregation):
+    # slow with for even if structure is constant
+    # https://github.com/tensorflow/tensorflow/issues/40517
+    print('Tracing')
+    tf.print('executing')
+    max_pairwise_similarity = []
+    for k in range(num_channels)[:-1]:                
+        #print('before concat: ',pairwise_sim_ij)
+        # throws error for mode=='half' must add if len(~)!=0
+        if mode=='half':
+            pairwise_sim_ij = X_split[slice(k+1,160,1)]+X_split[k]
+        elif mode=='off-diag':
+            right = X_split[slice(k+1,160,1)] + X_split[k]
+            left  = X_split[slice(0,k+1,1)]   + X_split[k]
+            pairwise_sim_ij = tf.concat([right,left],axis=0)
+        else:
+            raise ValueError
+        #print('after: ',pairwise_sim_ij)
+        if aggregation=='max':
+            connec =tf.reduce_max(pairwise_sim_ij,axis=0)
+        elif aggregation == 'mean':
+            connec = tf.reduce_mean(pairwise_sim_ij,axis=0)
+        elif aggregation==None:
+            connec = pairwise_sim_ij
+        else:
+            raise ValueError
+        #max_pairwise_similarity.write(k, connec)
+        max_pairwise_similarity+=[connec]
+    return tf.concat(max_pairwise_similarity,axis=source_axis)
+
+@tf.function
+def _pairwise_add(X_split,num_channels,source_axis,mode,aggregation):
+    # slow "for loop" even if structure is constant
+    # https://github.com/tensorflow/tensorflow/issues/40517
+    print('Tracing')
+    #tf.print('executing')
+    max_pairwise_similarity = tf.TensorArray(dtype=tf.float32, size=num_channels-1)#[]
+    for k in range(num_channels)[:-1]:                
+        #print('before concat: ',pairwise_sim_ij)
+        # throws error for mode=='half' must add if len(~)!=0
+        if mode=='half':
+            pairwise_sim_ij = X_split[slice(k+1,160,1)]+X_split[k]
+        elif mode=='off-diag':
+            right = X_split[slice(k+1,160,1)] + X_split[k]
+            left  = X_split[slice(0,k+1,1)]   + X_split[k]
+            pairwise_sim_ij = tf.concat([right,left],axis=0)
+        else:
+            raise ValueError
+        #print('after: ',pairwise_sim_ij)
+        if aggregation=='max':
+            connec =tf.reduce_max(pairwise_sim_ij,axis=(0,-2))
+        elif aggregation == 'mean':
+            connec = tf.reduce_mean(pairwise_sim_ij,axis=(0,-2))
+        elif aggregation==None:
+            connec = pairwise_sim_ij
+        else:
+            raise ValueError
+        max_pairwise_similarity = max_pairwise_similarity.write(k, connec)
+        #max_pairwise_similarity+=[connec]
+    max_pairswise_similarity = max_pairwise_similarity.stack()     
+    return tf.transpose(max_pairswise_similarity,[1,2,0,3])
+    return tf.concat(max_pairwise_similarity,axis=source_axis)
 
 class CircularPadding():
     def __init__(self,padsize):
