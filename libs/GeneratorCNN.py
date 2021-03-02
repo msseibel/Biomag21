@@ -613,7 +613,7 @@ class SlicingGeneratorAugment(keras.utils.Sequence):
     def __getitem__(self, index):
         """Generate one batch of data
         """
-        
+        # show subjects from site B more often since there are less subjects from this side
         batch_subjects = self.rng.choice(self.num_subjects,size=self.batch_size,replace=self.replace)
         batch_sites = self.mode_sites[batch_subjects]
         batch_good_samples = self.mode_good_samples[batch_subjects]

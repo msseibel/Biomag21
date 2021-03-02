@@ -211,7 +211,23 @@ def _pairwise_add(X_split,num_channels,source_axis,mode,aggregation):
         #max_pairwise_similarity+=[connec]
     max_pairswise_similarity = max_pairwise_similarity.stack()     
     return tf.transpose(max_pairswise_similarity,[1,2,0,3])
-    return tf.concat(max_pairwise_similarity,axis=source_axis)
+"""
+
+X_split = tf.split(tf.random.normal((2,256,160,16)),160,axis=2)
+out = _pairwise_add(X_split,160,2,'off-diag','mean')
+
+from libs import model_zoo
+reload(model_zoo)
+m = model_zoo.ConnectivityModel((512,160,1),network_params)
+m.compile('adam','categorical_crossentropy')
+m.fit(tf.random.normal((2,512,160,1)),tf.constant([[0,0,1],[0,1,0]]),epochs=100)
+
+out = m.predict(tf.random.normal((2,512,160,1)))
+loss = tf.losses.categorical_crossentropy(tf.constant([[0,0,1],[0,1,0]]),out)
+
+"""
+
+
 
 class CircularPadding():
     def __init__(self,padsize):
@@ -285,7 +301,7 @@ def ConnectivityModel(input_shape,network_params):
     numChannels = input_shape[1]
     inp = layers.Input(input_shape)
     
-    c1 = layers.Conv2D(16,kernel_size=(13,1),padding='same')(inp)
+    c1 = layers.Conv2D(16,kernel_size=(35,1),padding='same')(inp)
     c1 = layers.AveragePooling2D(pool_size=(2,1),strides=(2,1),padding='same')(c1)
     c1 = PairwiseChannelAdd(aggregation='mean',mode=connectivity_mode,source_axis=2)(c1)
     numPairs = K.int_shape(c1)[-2]
