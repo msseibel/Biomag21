@@ -174,28 +174,26 @@ class SharedDilatedConv(tf.keras.layers.Layer):
         
 def ConnectivityModel(input_shape,network_params):
     """
-    input_shape: (time_steps,numchannels)
+    input_shape: (time,channels,1)
     """
     use_bn = network_params['use_bn']
     do_ratio = network_params['do_ratio']
     num_classes = network_params['num_classes']
     
     # input_shape: (time_steps,N_SPHARA_harmonics)
-    numChannels = input_shape[-1]
+    numChannels = input_shape[1]
     inp = layers.Input(input_shape)
-    c1 = layers.Lambda(lambda x: K.expand_dims(x,1))(inp)
-    c1 = layers.Permute([3,2,1])(c1)
     
-    
-    c1 = layers.Conv2D(16,kernel_size=(1,13),padding='same')(c1)
+    c1 = layers.Conv2D(16,kernel_size=(13,1),padding='same')(inp)
+    c1 = layers.AveragePooling2D(pool_size=(2,1),strides=(2,1),padding='same')(c1)
     c1 = PairwiseChannelAdd(aggregation='mean',mode='off-diag')(c1)
-    c1 = layers.Conv2D(16,kernel_size=(numChannels,1),padding='valid',use_bias=True,name='spatial_conv')(c1)    
+    c1 = layers.Conv2D(16,kernel_size=(1,numChannels),padding='valid',use_bias=~use_bn,name='spatial_conv')(c1)    
     if use_bn:
         c1 = layers.BatchNormalization()(c1)    
     # square
     c1 = layers.Activation(K.square)(c1)
     # (1,35 |7)
-    c1 = layers.AveragePooling2D(pool_size=(1,25),strides=(1,7))(c1)
+    c1 = layers.AveragePooling2D(pool_size=(25,1),strides=(7,1))(c1)
     # not existent
     #c1 = layers.Conv2D(128,kernel_size=(1,13),padding='same', kernel_constraint=max_norm(2.),use_bias=True)(c1)
     c1 = layers.Activation(K.log)(c1)

@@ -36,8 +36,8 @@ def get_bad_times(condition,subject,signal_length=76800,frame_length=256,bad_sam
     merged_bads = np.unique(earlier)
     return merged_bads
 
-def get_bad_times_one_hot(condition,subject,signal_length=76800):
-    merged_bads = get_bad_times(condition,subject,signal_length)
+def get_bad_times_one_hot(condition,subject,signal_length=76800,bad_samples_path="."):
+    merged_bads = get_bad_times(condition,subject,signal_length,bad_samples_path)
     really_bad = np.zeros(signal_length)
     really_bad[merged_bads]=1
     return really_bad
