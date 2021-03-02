@@ -1,3 +1,12 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+'''
+Models for BioMag Competition function for the BioMag Dementia Challenge.
+
+(c) 2021 Marc Steffen Seibel, Technische Universitaet Ilmenau
+'''
+
 from tensorflow.keras import layers
 from tensorflow.keras import models
 from tensorflow.keras.backend import int_shape
@@ -61,16 +70,64 @@ class PairwiseChannelConv(tf.keras.layers.Layer):
             
         return tf.stack(max_pairwise_similarity,axis=1)
 
+    
+"""
+# off diag
+X_split = tf.split(tf.random.normal((2,256,160,16)),160,axis=2)
+t1 = time.time()
+num_tests=2
+for _ in range(num_tests):
+    aggregation = 'max'
+    pws = []
+    for k in range(160)[:-1]:
+        right = X_split[slice(k+1,160,1)]+X_split[k]
+        left  = X_split[slice(0,k+1,1)]+X_split[k]
+        tmp = tf.concat([right,left],axis=0)
+        if aggregation=='max':
+            # source_axis has only 1 element, therefore this can be seen as squeeze
+            pws+=[tf.reduce_max(tmp,axis=(0))]
+print((time.time()-t1)/num_tests)
+
+t1 = time.time()
+for _ in range(num_tests):
+    aggregation = 'max'
+    pws = []
+    for k in range(160):
+        tmp = X_split[slice(k+1,160,1)]+X_split[k]
+        if aggregation=='max':
+            pws+=[tmp]#tf.reduce_max(tmp,axis=0)
+print((time.time()-t1)/num_tests)
+num_tests = 100
+source_axis=2
+t1 = time.time()
+for _ in range(num_tests):
+    pws2 = []
+    for i,ch_i in enumerate(X_split):
+        # I hope that pairwise_sim_ij is cleared whenever the next i,ch_i iteration starts
+        # but eventually tensorflow will produce recreate always a new tensor without burrying 
+        # the old ones.
+        pairwise_sim_ij = [ch_i+ch_j for j,ch_j in enumerate(X_split) if j>i]
+        if len(pairwise_sim_ij):
+            pairwise_sim_ij = tf.concat(pairwise_sim_ij,axis=source_axis)
+        else:
+            pairwise_sim_ij=[]
+        pws2+=[pairwise_sim_ij]
+print((time.time()-t1)/num_tests)
+"""    
+    
 class PairwiseChannelAdd(tf.keras.layers.Layer):
     def __init__(self,aggregation,
             mode='off-diag',
-            *args,**kwargs):
+            source_axis=1,
+            *args,**kwargs,
+            ):
         """
         params: mode: 'half','off-diag','full', 
         different modes make sense for aggregation==None
         """
         self.aggregation = aggregation
         self.mode = mode
+        self.source_axis = source_axis
             
         super().__init__(*args, **kwargs)
         
@@ -78,40 +135,37 @@ class PairwiseChannelAdd(tf.keras.layers.Layer):
         pass
 
     def call(self, inputs, **kwargs):
-        meg_channel_axis = 1
-        
-        num_channels = K.int_shape(inputs)[meg_channel_axis]
+        source_axis = self.source_axis
+        print(source_axis)
+        num_channels = K.int_shape(inputs)[source_axis]
         # consider tf.unstack
-        X_split = tf.split(inputs,num_channels,meg_channel_axis)
+        X_split = tf.split(inputs,num_channels,source_axis)
         print('Building layer. This may take some time.')
+        #print(X_split)
         max_pairwise_similarity = []
-        for i,ch_i in enumerate(X_split):
-            # I hope that pairwise_sim_ij is cleared whenever the next i,ch_i iteration starts
-            # but eventually tensorflow will produce recreate always a new tensor without burrying 
-            # the old ones.
+
+        for k in range(num_channels)[:-1]:                
+            #print('before concat: ',pairwise_sim_ij)
+            # throws error for mode=='half' must add if len(~)!=0
             if self.mode=='half':
-                pairwise_sim_ij = [ch_i+ch_j for j,ch_j in enumerate(X_split) if j>i] 
+                pairwise_sim_ij = X_split[slice(k+1,160,1)]+X_split[k]
             elif self.mode=='off-diag':
-                pairwise_sim_ij = [ch_i+ch_j for j,ch_j in enumerate(X_split) if j!=i]
-            # memory goes brrr
-            elif self.mode=='full':
-                pairwise_sim_ij = [ch_i+ch_j for j,ch_j in enumerate(X_split)]
+                right = X_split[slice(k+1,160,1)] + X_split[k]
+                left  = X_split[slice(0,k+1,1)]   + X_split[k]
+                pairwise_sim_ij = tf.concat([right,left],axis=0)
             else:
                 raise ValueError
-                
-            
-            pairwise_sim_ij = tf.concat(pairwise_sim_ij,axis=1)
-            
+            #print('after: ',pairwise_sim_ij)
             if self.aggregation=='max':
-                max_pairwise_similarity+=[tf.reduce_max(pairwise_sim_ij,axis=1)]
+                max_pairwise_similarity+=[tf.reduce_max(pairwise_sim_ij,axis=0)]
             elif self.aggregation == 'mean':
-                max_pairwise_similarity+=[tf.reduce_mean(pairwise_sim_ij,axis=1)]
+                max_pairwise_similarity+=[tf.reduce_mean(pairwise_sim_ij,axis=0)]
             elif self.aggregation==None:
                 max_pairwise_similarity+=[pairwise_sim_ij]
             else:
                 raise ValueError
-            
-        return tf.stack(max_pairwise_similarity,axis=1)
+        #print(max_pairwise_similarity.shape) 
+        return tf.concat(max_pairwise_similarity,axis=source_axis)
     
     
 
@@ -179,15 +233,19 @@ def ConnectivityModel(input_shape,network_params):
     use_bn = network_params['use_bn']
     do_ratio = network_params['do_ratio']
     num_classes = network_params['num_classes']
-    
+    if 'connectivity_mode' in network_params.keys():
+        connectivity_mode = network_params['connectivity_mode']
+    else:
+        connectivity_mode = "off-diag"
     # input_shape: (time_steps,N_SPHARA_harmonics)
     numChannels = input_shape[1]
     inp = layers.Input(input_shape)
     
     c1 = layers.Conv2D(16,kernel_size=(13,1),padding='same')(inp)
     c1 = layers.AveragePooling2D(pool_size=(2,1),strides=(2,1),padding='same')(c1)
-    c1 = PairwiseChannelAdd(aggregation='mean',mode='off-diag')(c1)
-    c1 = layers.Conv2D(16,kernel_size=(1,numChannels),padding='valid',use_bias=~use_bn,name='spatial_conv')(c1)    
+    c1 = PairwiseChannelAdd(aggregation='mean',mode=connectivity_mode,source_axis=2)(c1)
+    numPairs = K.int_shape(c1)[-2]
+    c1 = layers.Conv2D(16,kernel_size=(1,numPairs),padding='valid',use_bias=~use_bn,name='spatial_conv')(c1)    
     if use_bn:
         c1 = layers.BatchNormalization()(c1)    
     # square
@@ -197,8 +255,6 @@ def ConnectivityModel(input_shape,network_params):
     # not existent
     #c1 = layers.Conv2D(128,kernel_size=(1,13),padding='same', kernel_constraint=max_norm(2.),use_bias=True)(c1)
     c1 = layers.Activation(K.log)(c1)
-    
-    print('numChannels',numChannels)
     
     c1 = layers.Flatten()(c1)
     c1 = layers.Dropout(do_ratio)(c1)
