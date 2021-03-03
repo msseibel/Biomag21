@@ -3,7 +3,6 @@ import matplotlib.pyplot as plt
 import os
 from scipy import signal,fftpack
 import itertools
-from importlib import reload
 import gc
 from sklearn.model_selection import GroupKFold,train_test_split,KFold, StratifiedKFold
 from collections import OrderedDict
@@ -13,7 +12,6 @@ import readSubjectsfif as readSubjects
 import json
 from libs import model_zoo
 from libs import utils,GeneratorCNN,visualisations, calc_scores
-from tensorflow.keras import callbacks
 from sklearn.utils import class_weight
 import warnings 
 import shutil
@@ -234,12 +232,12 @@ class RunTraining():
             generator_train.setData(self.data,self.train_index,self.meta)
             generator_valid.setData(self.data,self.valid_index,self.meta)
             
-            callbacks_list.extend([callbacks.ModelCheckpoint(os.path.join(self.completeDir,'cp.ckpt'),
+            callbacks_list.extend([keras.callbacks.ModelCheckpoint(os.path.join(self.completeDir,'cp.ckpt'),
                                        monitor="val_mci_dem_F1",
                                        save_best_only=True,
                                        mode='max')])
-            callbacks_list.extend([callbacks.CSVLogger(self.results_directory / 'log.csv', separator=",", append=False)])
-            callbacks_list.extend([callbacks.TensorBoard(self.results_directory / 'logs', update_freq=100)])
+            callbacks_list.extend([keras.callbacks.CSVLogger(self.results_directory / 'log.csv', separator=",", append=False)])
+            callbacks_list.extend([keras.callbacks.TensorBoard(self.results_directory / 'logs', update_freq=100)])
             
             train_history = model.fit(generator_train,validation_data=generator_valid, 
                 epochs=self.network_params['numTrainEpochs'],
@@ -285,9 +283,16 @@ class RunTraining():
             if type(self.network_params[k])==list:
                 self.network_params[k] = np.array(self.network_params[k])
     
-    def load_model(self,fold):
-        model = keras.models.load_model(os.path.join(self.completeDir,'fold_{}'.format(fold),'model'),compile=False)
-        return model    
+    def load_model(self,fold,model=None):
+        """
+        pass model if you want to load weights
+        """
+        results_dir = Path(os.path.join(self.completeDir,'fold_{}'.format(fold)))
+        if model is None:
+            model = keras.models.load_model(results_dir / 'model',compile=False)
+        else:
+            model.load_weights((results_dir / 'model' / 'variables' / 'variables').as_posix())
+        return model
         
     def prepare_fold(self,condition_subjects_dict_train, network, metrics):
         # save test and train subjects
