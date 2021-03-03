@@ -21,6 +21,7 @@ import pickle
 from libs import Multi_Class_Metrics as mcm
 from tqdm import tqdm
 from pathlib import Path
+from distutils.dir_util import copy_tree
 #import jsonpickle #!pip install jsonpickle
 
 LOADED = False
@@ -247,7 +248,7 @@ class RunTraining():
                 workers=self.network_params['workers'],
                 use_multiprocessing=self.network_params['multiprocessing'],
                 max_queue_size=20)
-        model.load_weights(os.path.join(self.completeDir,'cp.ckpt','variables',variables))
+        model.load_weights(os.path.join(self.completeDir,'cp.ckpt','variables','variables'))
         return model
     
     def get_optimizer(self):
@@ -462,6 +463,7 @@ class RunTraining():
         
         if not os.path.exists(self.results_directory / "code"):
             os.makedirs(self.results_directory / "code")
+            code_dir = Path(os.path.realpath(__file__)).parent
             copy_tree(code_dir.as_posix(), (self.results_directory / "code").as_posix())
         
         del self.data
