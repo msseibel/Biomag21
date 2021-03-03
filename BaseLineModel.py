@@ -20,6 +20,7 @@ import shutil
 import pickle
 from libs import Multi_Class_Metrics as mcm
 from tqdm import tqdm
+from pathlib import Path
 #import jsonpickle #!pip install jsonpickle
 
 LOADED = False
@@ -428,7 +429,8 @@ class RunTraining():
     def continue_training(self,fold,network,metrics=['acc'],callbacks_list=[]):
         # check first that subjects all test folds do not overlap
         self.check_test_subjects_distinct()
-        fold_dir = 'fold_'+str(fold)
+        fold_dir = Path('fold_'+str(fold))
+        results_directory = self.completeDir / fold_dir
         self.check_model_exists(fold_dir)
         
         train_augment_pipeline = self.load_pickle('train_aug_pipe.pkl')
@@ -452,7 +454,12 @@ class RunTraining():
                                    valid_augment_pipeline=valid_augment_pipeline,
                                    callbacks_list=callbacks_list)
         # Save Model
-        model.save(os.path.join(self.completeDir,fold_dir,'model'))
+        model.save(os.path.join(results_directory,'model'))
+        
+        if not os.path.exists(results_directory / "code"):
+            os.makedirs(results_directory / "code")
+            copy_tree(code_dir.as_posix(), (results_directory / "code").as_posix())
+        
         del self.data
         return model
         

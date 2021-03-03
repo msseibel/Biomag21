@@ -1,84 +1,26 @@
 import matplotlib.pyplot as plt
 import numpy as np
 import matplotlib.tri as tri
+import matplotlib as mpl
 from mpl_toolkits.mplot3d import axes3d, Axes3D 
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from matplotlib import markers
 import matplotlib.colors as mcolors
 import pandas as pd
-#import spharapy.trimesh as tm
-#import spharapy.spharatransform as st
-#import spharapy.datasets as sd
-#import spharapy.spharabasis as sb
-
 from scipy import signal,fftpack,linalg
-import matplotlib as mpl
 from matplotlib import cm,colors
-from sklearn.discriminant_analysis import LinearDiscriminantAnalysis as LDA
 from matplotlib.widgets import RectangleSelector
-
-#from defaults import _BORDER_DEFAULT,_EXTRAPOLATE_DEFAULT,DEFAULTS
 from copy import deepcopy
 import warnings
 import itertools
-#from check import _ensure_int,_multi
 from mne.decoding import CSP
 import mne
 from mne.channels import make_standard_montage
 from libs.utils import MEGArray,_check_option,_setup_vmin_vmax,import_or_install
 from libs import preprocessing
-
-
-
-
-
-import matplotlib
-import matplotlib.pyplot as plt
-try:
-    import google.colab
-    IN_COLAB = True
-except:
-    IN_COLAB = False
-    matplotlib.use('Qt5Agg')
-    from PyQt5 import QtWidgets
-    from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-    from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
-    #from PyQt5.QtCore import *
-    #from PyQt5.QtGui import *
-    #from PyQt5.QtWidgets import *
-    
-    class ScrollableWindow(QtWidgets.QMainWindow):
-        def __init__(self, fig):
-            self.qapp = QtWidgets.QApplication([])
-
-            QtWidgets.QMainWindow.__init__(self)
-            self.widget = QtWidgets.QWidget()
-            self.setCentralWidget(self.widget)
-            self.widget.setLayout(QtWidgets.QVBoxLayout())
-            self.widget.layout().setContentsMargins(0,0,0,0)
-            self.widget.layout().setSpacing(0)
-
-            self.fig = fig
-            self.canvas = FigureCanvas(self.fig)
-            self.canvas.draw()
-            self.scroll = QtWidgets.QScrollArea(self.widget)
-            self.scroll.setWidget(self.canvas)
-
-            self.nav = NavigationToolbar(self.canvas, self.widget)
-            self.widget.layout().addWidget(self.nav)
-            self.widget.layout().addWidget(self.scroll)
-
-            
-            self.show()
-            self.qapp.exec_() 
-
-import matplotlib.pyplot as plt
-
-
-import numpy as np
-import matplotlib.pyplot as plt
 from matplotlib.patches import Ellipse
 import matplotlib.transforms as transforms
+
 def confidence_ellipse(x, y, ax, n_std=3.0, facecolor='none', **kwargs):
     """
     Create a plot of the covariance confidence ellipse of *x* and *y*.
@@ -1170,7 +1112,11 @@ def dataset_cov():
 
 ###############################################################################
 # plot functions
-def plot_data(lda, X, y, y_pred, fig_index):
+def plot_data(X, y, y_pred, fig_index,lda = None):
+    # from sklearn.discriminant_analysis import LinearDiscriminantAnalysis as LDA
+    if lda is None:
+        from sklearn.discriminant_analysis import LinearDiscriminantAnalysis as LDA
+        lda = LDA()
     splot = plt.subplot(2, 2, fig_index)
     if fig_index == 1:
         plt.title('Linear Discriminant Analysis')
