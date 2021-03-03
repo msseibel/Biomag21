@@ -147,7 +147,51 @@ class PairwiseChannelAdd(tf.keras.layers.Layer):
 
         #print(max_pairwise_similarity.shape)
         #return tf.concat(max_pairwise_similarity,axis=source_axis)
-        return _pairwise_add(X_split,num_channels,source_axis,self.mode,self.aggregation)
+        return self._pairwise_add(X_split,num_channels,source_axis,self.mode,self.aggregation)
+    
+    @tf.function
+    def _pairwise_add(self,X_split,num_channels,source_axis,mode,aggregation):
+        # slow on start especially with backpro for first time
+        # https://github.com/tensorflow/tensorflow/issues/40517
+        print('Tracing')
+        #tf.print('executing')
+        max_pairwise_similarity = tf.TensorArray(dtype=tf.float32, size=num_channels-1)#[]
+        for k in range(num_channels)[:-1]:                
+            #print('before concat: ',pairwise_sim_ij)
+            # throws error for mode=='half' must add if len(~)!=0
+            if mode=='half':
+                pairwise_sim_ij = X_split[slice(k+1,160,1)]+X_split[k]
+            elif mode=='off-diag':
+                right = X_split[slice(k+1,160,1)] + X_split[k]
+                left  = X_split[slice(0,k+1,1)]   + X_split[k]
+                pairwise_sim_ij = tf.concat([right,left],axis=0)
+            else:
+                raise ValueError
+            #print('after: ',pairwise_sim_ij)
+            if aggregation=='max':
+                connec =tf.reduce_max(pairwise_sim_ij,axis=(0,-2))
+            elif aggregation == 'mean':
+                connec = tf.reduce_mean(pairwise_sim_ij,axis=(0,-2))
+            elif aggregation==None:
+                connec = pairwise_sim_ij
+            else:
+                raise ValueError
+            max_pairwise_similarity = max_pairwise_similarity.write(k, connec)
+            #max_pairwise_similarity+=[connec]
+        max_pairswise_similarity = max_pairwise_similarity.stack()     
+        return tf.transpose(max_pairswise_similarity,[1,2,0,3])
+    
+    #https://keras.io/guides/serialization_and_saving/#custom-objects
+    def get_config(self):
+        return {"aggregation": self.aggregation,
+               "mode":self.mode,
+               "source_axis":self.source_axis}
+
+    # There's actually no need to define `from_config` here, since returning
+    # `cls(**config)` is the default behavior.
+    @classmethod
+    def from_config(cls, config):
+        return cls(**config)
     
 #@tf.function    
 def _pairwise_add_depr(X_split,num_channels,source_axis,mode,aggregation):
@@ -180,37 +224,7 @@ def _pairwise_add_depr(X_split,num_channels,source_axis,mode,aggregation):
         max_pairwise_similarity+=[connec]
     return tf.concat(max_pairwise_similarity,axis=source_axis)
 
-@tf.function
-def _pairwise_add(X_split,num_channels,source_axis,mode,aggregation):
-    # slow "for loop" even if structure is constant
-    # https://github.com/tensorflow/tensorflow/issues/40517
-    print('Tracing')
-    #tf.print('executing')
-    max_pairwise_similarity = tf.TensorArray(dtype=tf.float32, size=num_channels-1)#[]
-    for k in range(num_channels)[:-1]:                
-        #print('before concat: ',pairwise_sim_ij)
-        # throws error for mode=='half' must add if len(~)!=0
-        if mode=='half':
-            pairwise_sim_ij = X_split[slice(k+1,160,1)]+X_split[k]
-        elif mode=='off-diag':
-            right = X_split[slice(k+1,160,1)] + X_split[k]
-            left  = X_split[slice(0,k+1,1)]   + X_split[k]
-            pairwise_sim_ij = tf.concat([right,left],axis=0)
-        else:
-            raise ValueError
-        #print('after: ',pairwise_sim_ij)
-        if aggregation=='max':
-            connec =tf.reduce_max(pairwise_sim_ij,axis=(0,-2))
-        elif aggregation == 'mean':
-            connec = tf.reduce_mean(pairwise_sim_ij,axis=(0,-2))
-        elif aggregation==None:
-            connec = pairwise_sim_ij
-        else:
-            raise ValueError
-        max_pairwise_similarity = max_pairwise_similarity.write(k, connec)
-        #max_pairwise_similarity+=[connec]
-    max_pairswise_similarity = max_pairwise_similarity.stack()     
-    return tf.transpose(max_pairswise_similarity,[1,2,0,3])
+
 """
 
 X_split = tf.split(tf.random.normal((2,256,160,16)),160,axis=2)
@@ -297,13 +311,18 @@ def ConnectivityModel(input_shape,network_params):
         connectivity_mode = network_params['connectivity_mode']
     else:
         connectivity_mode = "off-diag"
+    if 'aggregation' in network_params.keys():
+        aggregation = network_params['aggregation']
+    else:
+        aggregation = 'mean'
     # input_shape: (time_steps,N_SPHARA_harmonics)
     numChannels = input_shape[1]
     inp = layers.Input(input_shape)
     
     c1 = layers.Conv2D(16,kernel_size=(35,1),padding='same')(inp)
     c1 = layers.AveragePooling2D(pool_size=(2,1),strides=(2,1),padding='same')(c1)
-    c1 = PairwiseChannelAdd(aggregation='mean',mode=connectivity_mode,source_axis=2)(c1)
+    c1 = layers.Activation('elu')(c1)
+    c1 = PairwiseChannelAdd(aggregation=aggregation,mode=connectivity_mode,source_axis=2)(c1)
     numPairs = K.int_shape(c1)[-2]
     c1 = layers.Conv2D(16,kernel_size=(1,numPairs),padding='valid',use_bias=~use_bn,name='spatial_conv')(c1)    
     if use_bn:

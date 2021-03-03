@@ -21,6 +21,7 @@ import pickle
 from libs import Multi_Class_Metrics as mcm
 from tqdm import tqdm
 from pathlib import Path
+from distutils.dir_util import copy_tree
 #import jsonpickle #!pip install jsonpickle
 
 LOADED = False
@@ -237,6 +238,9 @@ class RunTraining():
                                        monitor="val_mci_dem_F1",
                                        save_best_only=True,
                                        mode='max')])
+            callbacks_list.extend([callbacks.CSVLogger(self.results_directory / 'log.csv', separator=",", append=False)])
+            callbacks_list.extend([callbacks.TensorBoard(self.results_directory / 'logs', update_freq=100)])
+            
             train_history = model.fit(generator_train,validation_data=generator_valid, 
                 epochs=self.network_params['numTrainEpochs'],
                 callbacks=callbacks_list,
@@ -244,7 +248,7 @@ class RunTraining():
                 workers=self.network_params['workers'],
                 use_multiprocessing=self.network_params['multiprocessing'],
                 max_queue_size=20)
-        model = keras.models.load_model(os.path.join(self.completeDir,'cp.ckpt'),compile=False)
+        model.load_weights(os.path.join(self.completeDir,'cp.ckpt','variables','variables'))
         return model
     
     def get_optimizer(self):
@@ -392,7 +396,7 @@ class RunTraining():
             print('#########')
             fold_dir = 'fold_'+str(k)
             subdir = os.path.join(self.completeDir,fold_dir)
-            
+            self.results_directory = Path(os.path.join(self.completeDir,fold_dir))
             with open(os.path.join(self.completeDir,fold_dir,'train_subjects.json'),'r') as f:
                 condition_subjects_dict_train = json.load(f)
             model, subjects_train_valid = self.prepare_fold(condition_subjects_dict_train,network,metrics=metrics)
@@ -403,7 +407,7 @@ class RunTraining():
                                        valid_augment_pipeline=valid_augment_pipeline,
                                        callbacks_list=callbacks_list)
             # Save Model
-            model.save(os.path.join(self.completeDir,fold_dir,'model'))
+            model.save(self.results_directory / 'model')
             del self.data
         return model
     
@@ -430,7 +434,8 @@ class RunTraining():
         # check first that subjects all test folds do not overlap
         self.check_test_subjects_distinct()
         fold_dir = Path('fold_'+str(fold))
-        results_directory = self.completeDir / fold_dir
+        
+        self.results_directory = self.completeDir / fold_dir
         self.check_model_exists(fold_dir)
         
         train_augment_pipeline = self.load_pickle('train_aug_pipe.pkl')
@@ -454,11 +459,12 @@ class RunTraining():
                                    valid_augment_pipeline=valid_augment_pipeline,
                                    callbacks_list=callbacks_list)
         # Save Model
-        model.save(os.path.join(results_directory,'model'))
+        model.save(os.path.join(self.results_directory,'model'))
         
-        if not os.path.exists(results_directory / "code"):
-            os.makedirs(results_directory / "code")
-            copy_tree(code_dir.as_posix(), (results_directory / "code").as_posix())
+        if not os.path.exists(self.results_directory / "code"):
+            os.makedirs(self.results_directory / "code")
+            code_dir = Path(os.path.realpath(__file__)).parent
+            copy_tree(code_dir.as_posix(), (self.results_directory / "code").as_posix())
         
         del self.data
         return model
@@ -487,8 +493,10 @@ class RunTraining():
             feature_type=feature_type+"_train"
         
         self.load_params()
-        fold_dir = "fold_{}".format(fold)
-        with open(os.path.join(self.completeDir,fold_dir,subject_group),'r') as f:
+        fold_dir = Path("fold_{}".format(fold))
+        self.results_directory = self.completeDir / fold_dir
+        
+        with open(self.results_directory / subject_group,'r') as f:
             condition_subjects_dict_test = json.load(f)
         #model,generator_test,readSubjects_params,condition_subjects_dict,iterative
         preds_soft, y_true, labels, all_ids, site = self._predict(model,test_pipe,
