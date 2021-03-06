@@ -16,7 +16,7 @@ import os.path as op
 import sys
 from pathlib import Path
 import numpy as np
-import mne
+
 from _ctypes import PyObj_FromPtr
 import json
 import re
@@ -183,12 +183,12 @@ class Subject_Splitter():
     def __getitem__(self,k):
         return 
 
-def subjects_by_site(subjects):
+def subjects_by_site(subjects,utility_path):
     assert len(np.setdiff1d(['mci','dementia','control'],list(subjects.keys())))==0,(subjects.keys())
     subjects_by_site = {'A':{'mci':[],'dementia':[],'control':[]},
                         'B':{'mci':[],'dementia':[],'control':[]}}
     for condition in list(subjects.keys()):
-        by_site = sort_by_site(subjects,condition,path= r'./dataframes/maxwell_and_temporal')
+        by_site = sort_by_site(subjects,condition,path= utility_path)
         subjects_by_site['A'][condition].extend(by_site['A'])
         subjects_by_site['B'][condition].extend(by_site['B'])
     return subjects_by_site
@@ -254,7 +254,7 @@ def sort_by_site(subjects,condition,path= r'./dataframes/maxwell_and_temporal'):
     return by_site
     
 
-def cv_split_wrt_site(subjects,n_splits):
+def cv_split_wrt_site(subjects,n_splits,utility_path):
     """
     subjects has keys: ['A','B']
     and values being dicts with keys 'control', 'dementia', 'mci'
@@ -262,7 +262,7 @@ def cv_split_wrt_site(subjects,n_splits):
     """
     from sklearn.model_selection import StratifiedKFold
     if not 'A' in subjects.keys() or not 'B' in subjects.keys():
-        subjects = subjects_by_site(subjects)
+        subjects = subjects_by_site(subjects,utility_path)
     labelsA,labelsB, subjectsA, subjectsB = _split_wrt_site_base(subjects)
     
     kfoldA      = StratifiedKFold(n_splits=n_splits)
@@ -360,6 +360,7 @@ def get_subjects_wrt_site(subjects,cA,cB,condition,dataframes='dataframes/maxwel
             break
 
 def get_raw_mne_info_condition_number(condition,number,path=r'E:\2021_Biomag_Dementia_MNE\inT\interpolated100Hz\raw'):
+    import mne
     print('site: ',get_site_from_condition_number(condition,number))
     raw = mne.io.read_raw_fif(os.path.join(path,'100Hz{}{:03d}raw.fif'.format(condition,number)))
     return raw.info 
@@ -437,6 +438,24 @@ def get_stable_channels(matches,order):
         stable_chs[:,1] = np.concatenate(stable_chs[:,1]).astype(np.uint8)
     return stable_chs.astype(np.uint8)
 
+def get_matches(site,mode,Path_to_cache):
+    cache = Path_to_cache
+    if mode=='full':
+        return np.arange(160)
+    elif mode=='order0':
+        matches = np.load(cache / "utility_data" / "pareto_opt_matches.npy")
+        matches = get_stable_channels(matches,0)
+        return matches[:,int(site=='B')]
+    elif mode=='by_distance':
+        import json
+        with open(cache / "utility_data" / 'A_B_bestpositional_hungarian.json') as f:
+            match = json.load(f)
+        match['matching0'].pop('info')
+        channel_matches = np.array([list(match['matching0'].keys()),list(match['matching0'].values())]).astype(int)
+        return channel_matches[int(site=='B')]
+    else:
+        raise ValueError('Valid values for mode are: {}, {}, {}'.format('full','order0','by_distance'))
+    
 # used for BioMag2021 channel matching
 def write_matching(node_edit_path_dict,filename):
     if not 'info' in node_edit_path_dict.keys():
