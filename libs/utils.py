@@ -86,6 +86,9 @@ def ema_substraction(data,alpha):
     data: channels,samples
     small alpha means large memory for the mean
     """
+    if data.shape[0]>data.shape[1]:
+        warnings.warn("Axis 0 has less entries then axis 1. Check that data has shape ('channels,samples') ")
+    
     moving_avg = data.copy()    
     num_samples = data.shape[1]
     #ma = np.mean(data,axis=1,keepdims=True)
@@ -97,12 +100,14 @@ def em_avg_std(data,alpha):
     data: channels,samples
     small alpha means large memory for the mean
     """
+    # todo: change input to )samples,channels)
+    data = np.transpose(data,[1,0])
+    
     num_samples = data.shape[1]
     #ma = np.mean(data,axis=1,keepdims=True)
     moving_avg = ema(data.copy(),alpha=alpha)
     em_std = emstd(data.copy(),moving_avg,alpha)
-    return (data-moving_avg)/em_std
-
+    return np.transpose((data-moving_avg)/em_std,[1,0])
 
 
 
@@ -346,10 +351,10 @@ def digit_to_condition(digit):
 def unique_bads_in_fif(raw):
     raw.info['bads'] = list(np.unique(np.array(raw.info['bads'])))
     
-def get_subjects_wrt_site(subjects,cA,cB,condition,dataframes='dataframes/maxwell_and_temporal'):
+def get_subjects_wrt_site(subjects,cA,cB,condition,utility_path='.'):
     num_subjects = {'control':100,'mci':15,'dementia':29}[condition]
     for k in np.arange(1,num_subjects+1):
-        site = get_site_from_condition_number(condition,k,dataframes)
+        site = get_site_from_condition_number(condition,k,utility_path)
         if site=='A' and cA>0:
             cA-=1
             subjects[condition]+=[k]
@@ -380,8 +385,8 @@ def correct_rotation(rawB):
 
     
 def get_site_from_condition_number(condition,subject_number,direc= r'dataframes\maxwell_and_temporal'):
-    warnings.warn("Method is deprecated us 'get_site'.")
-    return get_site('foo',**{'condition':condition,'number':subject_number})
+    warnings.warn("Method is deprecated use 'get_site'.")
+    return get_site('foo',**{'condition':condition,'number':subject_number,'filepath':direc})
     assert condition in ['mci','dementia','control']
     maxwelldf = os.listdir(direc)
     site = [f for f in maxwelldf if condition in f and '{:03d}'.format(subject_number) in f]
@@ -417,8 +422,9 @@ def get_site(*args,**kwargs):
         return get_site_from_fs(kwargs['fs'])
     elif 'condition' in kwargs.keys():
         condition=kwargs['condition']
-        number = kwargs['number']
-        return get_site_from_json(condition,number)
+        number   = kwargs['number']
+        filepath = kwargs['filepath']
+        return get_site_from_json(condition,number,filepath)
     else:
         raise ValueError(kwargs.keys())
         
