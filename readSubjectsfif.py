@@ -126,15 +126,18 @@ class DataLoader():
             use_filter = True
         else:
             l_freq = 0
+            
         if 'h_freq' in kwargs.keys():
             h_freq = kwargs['h_freq']
             use_filter = True
         else:
             h_freq = 100
+        
         if 'frame_length' in kwargs.keys():
             frame_length = kwargs['frame_length']
         else:
             frame_length = 256
+            
         if 'num_channels' in kwargs.keys():
             num_channels = kwargs['num_channels']
         else:
@@ -156,16 +159,16 @@ class DataLoader():
         else: 
             verbose = 0
         
-        
+        X = mne.io.read_raw_fif(filename,verbose=verbose)
+        if fs is not None and X.info['sfreq']!=fs:
+            X.load_data()
+            X.resample(fs)
+                
         # https://mne.tools/stable/auto_examples/time_frequency/plot_time_frequency_global_field_power.html?highlight=bands
         if hasattr(l_freq, '__iter__'): #implies use_filter
             assert len(l_freq)==len(h_freq)
             #logging.info('Extracting multiple frequency bands. This can take a long time.')
-            X = mne.io.read_raw_fif(filename,verbose=verbose)
-            if fs is not None and X.info['sfreq']!=fs:
-                X.resample(fs)
             bands = np.zeros((num_channels,len(l_freq),X.n_times))
-            
             for i,(lf,hf) in enumerate(zip(l_freq,h_freq)):
                 Xcopy = X.copy()
                 Xcopy.load_data()
@@ -181,12 +184,9 @@ class DataLoader():
                 nave=1)
         elif use_filter:
             #print('Load and Filter: ',condition, ' ', subject_id)
-            X = mne.io.read_raw_fif(filename,verbose=verbose)
             X.load_data()
             X.filter(l_freq=l_freq,h_freq=h_freq,verbose=verbose)
-        else:
-            #print('Loading: ', condition, ' ', subject_id)
-            X = mne.io.read_raw_fif(filename,verbose=verbose)
+     
         
         if hasattr(X,'n_times'):
             signal_length = X.n_times

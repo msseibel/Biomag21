@@ -1071,7 +1071,7 @@ def SpatialTemporalMultiClass(input_shape,network_params,**kwargs):
     if use_bn:
         c11 = layers.BatchNormalization()(c11)
     c11 = layers.MaxPooling2D(pool_size=(2,1),strides=(2,1),padding='same')(c11)
-    c11 = layers.Conv2D(32,kernel_size=(5,1),strides=(1,1),padding='same',use_bias=True,name='c11conv')(c11)
+    c11 = layers.Conv2D(32,kernel_size=(5,1),strides=(1,1),padding='same',use_bias=~use_bn,name='c11conv')(c11)
     c11 = layers.Activation('relu')(c11) 
     if use_bn:
         c11 = layers.BatchNormalization()(c11)
@@ -1091,9 +1091,8 @@ def SpatialTemporalMultiClass(input_shape,network_params,**kwargs):
         c11 = layers.BatchNormalization()(c11)
     
     c1 = layers.GlobalAveragePooling2D()(c1)
-    
-    c1 = layers.Flatten()(c1)
-    c1 = layers.Dropout(do_ratio)(c1)
+    if do_ratio>0:
+        c1 = layers.Dropout(do_ratio)(c1)
     if num_classes==2:
         c1 = layers.Dense(1,activation='sigmoid')(c1)
     else:

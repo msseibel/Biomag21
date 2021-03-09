@@ -378,7 +378,8 @@ class RunTraining():
             cv = [(condition_subjects_dict_train,condition_subjects_dict_test)]            
         else:        
             n_folds = self.network_params['n_folds']
-            cv = utils.cv_split_wrt_site(self.static_data_params['subjects'],n_splits=n_folds)
+            cv = utils.cv_split_wrt_site(self.static_data_params['subjects'],
+                                         n_splits=n_folds,utility_path=self.static_data_params['utility_data'])
             for k in range(n_folds):                
                 fold_dir = 'fold_'+str(k)
                 subdir = os.path.join(self.completeDir,fold_dir)

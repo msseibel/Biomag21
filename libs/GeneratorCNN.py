@@ -162,7 +162,7 @@ class draw_random_time_frame(Augmentation_Function):
         if good_samples is not None:
             indices = np.random.randint(good_samples.shape[1],size=batch_size)
             start_time_point = good_samples[np.arange(batch_size),indices]
-            #print(start_time_point.shape)
+            #print(start_time_point+self.frame_length)
         start_time_points_range = [np.arange(sp,sp+self.frame_length) for sp in start_time_point]
         samplesRepeated         = np.repeat(np.arange(batch_size).reshape(batch_size,1),self.frame_length,axis=1)
         return Xbatch[samplesRepeated,np.array(start_time_points_range)],kwargs
@@ -366,7 +366,7 @@ class draw_time_frame(Augmentation_Function):
     def __init__(self):
         super().__init__()
 
-    def __call__(self,Xbatch,dtf_start_time_point,dtf_frame_length,**kwargs):
+    def __call__(self,Xbatch,start_time_point,frame_length,**kwargs):
         """
         Xbatch: subjects,time,channels
         """
