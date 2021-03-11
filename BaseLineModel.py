@@ -245,7 +245,8 @@ class RunTraining():
                 class_weight=class_weights,
                 workers=self.network_params['workers'],
                 use_multiprocessing=self.network_params['multiprocessing'],
-                max_queue_size=20)
+                max_queue_size=30)
+        print('Load Best Model')
         model.load_weights(os.path.join(self.completeDir,'cp.ckpt','variables','variables'))
         return model
     
