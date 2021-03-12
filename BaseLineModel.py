@@ -379,7 +379,8 @@ class RunTraining():
             cv = [(condition_subjects_dict_train,condition_subjects_dict_test)]            
         else:        
             n_folds = self.network_params['n_folds']
-            cv = utils.cv_split_wrt_site(self.static_data_params['subjects'],n_splits=n_folds)
+            cv = utils.cv_split_wrt_site(self.static_data_params['subjects'],
+                                         n_splits=n_folds,utility_path=self.static_data_params['utility_data'])
             for k in range(n_folds):                
                 fold_dir = 'fold_'+str(k)
                 subdir = os.path.join(self.completeDir,fold_dir)
@@ -474,7 +475,7 @@ class RunTraining():
         
         del self.data
         return model
-        
+    
     def test_model(self,model,test_pipe,fold,metrics=[],keep_data=False,data_loaded=False,
             subject_group="test_subjects.json",make_classification=True,iterative=False,
             feature_type="feature"):
@@ -496,9 +497,9 @@ class RunTraining():
         if "test" in subject_group:
             feature_type=feature_type+"_test"
         else:
-            feature_type=feature_type+"_train"
-        
+            feature_type=feature_type+"_train"    
         self.load_params()
+    
         fold_dir = Path("fold_{}".format(fold))
         self.results_directory = self.completeDir / fold_dir
         
@@ -555,6 +556,7 @@ class RunTraining():
             if not data_loaded:
                 self.data,self.meta = self.assembleLoad(condition_subjects_dict,**readSubjects_params)         
                 self.standardizeData(self.static_data_params['standardize'],np.arange(len(self.data['Y'])))  
+            
             subjects_test = np.array([str(sub['condition'])+str(sub['id']) for sub in self.meta['subjects']])
             for test_index in tqdm(np.arange(len(self.data['Y'])),position=0,leave=True):
                 test_index = np.array([test_index]) 
@@ -575,6 +577,41 @@ class RunTraining():
         y_true_one_hot[np.arange(len(labels)),y_true] = 1     
         return output, y_true_one_hot, labels, all_ids, site
             
+    def plotSHAP(self,model,fold,data=None,subject_group="test_subjects.json"):
+        if data is not None:
+            # unpack data
+            self.data, self.meta = data
+            pass
+        else:
+            # load data -> requires mne
+            fold_dir = Path("fold_{}".format(fold))
+            self.results_directory = self.completeDir / fold_dir
+        
+            with open(self.results_directory / subject_group,'r') as f:
+                condition_subjects_dict_test = json.load(f)
+            self.data,self.meta = self.assembleLoad(condition_subjects_dict,**readSubjects_params)         
+            self.standardizeData(self.static_data_params['standardize'],
+                                 np.arange(len(self.data['Y'])))
+            X = self.data['X']
+            y = self.data['Y']
+        
+        import shap
+        backgrounds_per_subject = 5 # this will result in #subjects * 5 backgrounds. A high number is comput expensive.
+        
+        background = []
+        for i, subject in enumerate(self.meta['subjects']):
+            # ToDo: Check whether it makes sense to take background from test or train set
+            # select a few time frames of the current subject
+            start_times = np.random.choice(X.shape[-1],
+                                           backgrounds_per_subject,
+                                           replace=False) 
+            start_time_points_range = [np.arange(sp,sp+self.network_params['frame_size']) for sp in start_times]
+            Xframes = X[[i]*backgrounds_per_subject,:,start_time_points_range]
+            # select a set of background examples to take an expectation over
+            background += [Xframes]
+            # explain predictions of the model on four images
+        e = shap.DeepExplainer(model, background)    
+        return e
     
     def evaluate3classes(self,ylabels,preds_soft,fold,metrics):    
         preds = np.argmax(np.mean(preds_soft,axis=1),axis=-1)

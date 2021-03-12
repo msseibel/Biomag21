@@ -1056,58 +1056,48 @@ def SpatialTemporalMultiClass(input_shape,network_params,**kwargs):
     numChannels = K.int_shape(inp)[2]
     print('numChannels',numChannels)
     
-    
-    # whether using strides=1 or =2 first makes different receptive fields. 
-    # strides first
-    c11 = layers.Conv2D(8,kernel_size=(35,1),strides=(2,1),padding='same',use_bias=~use_bn,name='c11stride')(inp)
+    c1 = layers.Conv2D(16,kernel_size=(3,numChannels),padding='valid',use_bias=True,name='temporal_conv')(inp)
+    c1 = layers.Activation('elu')(c1)
+    if use_bn:
+        c1 = layers.BatchNormalization()(c1)
+        
+
+        
+    #####
+    ##### First Block
+    #####
+    c11 = layers.Conv2D(16,kernel_size=(35,1),strides=(1,1),padding='same',use_bias=~use_bn,name='c11stride')(c1)
+    c11 = layers.Activation('relu')(c11)   
     if use_bn:
         c11 = layers.BatchNormalization()(c11)
-    c11 = layers.Activation('elu')(c11)   
-    c11 = layers.Conv2D(8,kernel_size=(5,1),strides=(1,1),padding='same',use_bias=True,name='c11conv')(c11)
-    c11 = layers.Activation('elu')(c11) 
-    #if use_bn:
-    #    c11 = layers.BatchNormalization()(c11)
-    #c11 = layers.Activation('relu')(c11)
-
-    # conv first
-    c12 = layers.Conv2D(8,kernel_size=(35,1),strides=(1,1),padding='same',use_bias=~use_bn,name='c12conv')(inp)
+    c11 = layers.MaxPooling2D(pool_size=(2,1),strides=(2,1),padding='same')(c11)
+    c11 = layers.Conv2D(32,kernel_size=(5,1),strides=(1,1),padding='same',use_bias=~use_bn,name='c11conv')(c11)
+    c11 = layers.Activation('relu')(c11) 
+    if use_bn:
+        c11 = layers.BatchNormalization()(c11)
+        
+    #####
+    ##### SECOND BLOCK
+    #####
+    c12 = layers.Conv2D(32,kernel_size=(5,1),strides=(1,1),padding='same',use_bias=~use_bn)(c11)
+    c12 = layers.Activation('relu')(c12)
     if use_bn:
         c12 = layers.BatchNormalization()(c12)
-    c12 = layers.Activation('elu')(c12)
-    c12 = layers.Conv2D(8,kernel_size=(5,1),strides=(2,1),padding='same',use_bias=True,name='c12stride')(c12)
-    c12 = layers.Activation('elu')(c12)
+    c12 = layers.MaxPooling2D(pool_size=(2,1),strides=(2,1),padding='same')(c12)
     
-    #if use_bn:
-    #    c12 = layers.BatchNormalization()(c12)
-    #c12 = layers.Activation('relu')(c12)
+    c1 = layers.Conv2D(32,kernel_size=(5,1),strides=(1,1),padding='same',use_bias=~use_bn)(c12)
+    c1 = layers.Activation('relu')(c1)
+    if use_bn:
+        c11 = layers.BatchNormalization()(c11)
     
-    
-    # merge
-    c1 = layers.concatenate([c11,c12],axis=-1) 
-    c1 = layers.Conv2D(16,kernel_size=(3,numChannels),padding='valid',use_bias=True,name='temporal_conv')(c1)
-    c1 = layers.Activation('elu')(c1)
-    
-    #c1 = layers.Conv2D(32,kernel_size=(25,1),strides=(7,1),
-    #    padding='same',use_bias=~use_bn,name='conv3')(c1)    
-    #if use_bn:
-    #    c1 = layers.BatchNormalization()(c1)
-    
-    # square
-    #c1 = layers.Activation(K.square)(c1)
-    # (1,35 |7)
-    c1 = layers.AveragePooling2D(pool_size=(25,1),strides=(7,1))(c1)
-    # not existent
-    #c1 = layers.Conv2D(128,kernel_size=(1,13),padding='same', kernel_constraint=max_norm(2.),use_bias=True)(c1)
-    #c1 = layers.Activation(K.log)(c1)
-    
-    
-    c1 = layers.Flatten()(c1)
-    c1 = layers.Dropout(do_ratio)(c1)
+    c1 = layers.GlobalAveragePooling2D()(c1)
+    if do_ratio>0:
+        c1 = layers.Dropout(do_ratio)(c1)
     if num_classes==2:
         c1 = layers.Dense(1,activation='sigmoid')(c1)
     else:
         c1 = layers.Dense(num_classes,activation='softmax',)(c1) # kernel_constraint=max_norm(.5)
-    return models.Model(inp,c1) 
+    return models.Model(inp,c1)
 
 def SpatialAverageModel(input_shape,network_params):
     use_bn=network_params['use_bn']
@@ -1138,6 +1128,108 @@ def SpatialAverageModel(input_shape,network_params):
         c1 = layers.Dense(num_classes,activation='softmax',)(c1) # kernel_constraint=max_norm(.5)
     return models.Model(inp,c1) 
 
+
+
+def Channel_Decision_Small_Shared_Out(input_shape,network_params):
+    if not 'use_bn' in network_params.keys():
+        use_bn= True
+    else:
+        use_bn = network_params['use_bn']
+    if not 'do_ratio' in network_params.keys():
+        do_ratio= 0.5
+    else:
+        do_ratio = network_params['do_ratio']
+    if not 'num_classes' in network_params.keys():
+        num_classes = 3
+    else:
+        num_classes = network_params['num_classes']
+    
+    inp = layers.Input(input_shape)
+    numChannels = K.int_shape(inp)[2]
+    # bias not needed when using BatchNorm
+    c1 = layers.Conv2D(32,kernel_size=(13,1),strides=(1,1),padding='same',use_bias=False,name='temporal_conv_relu')(inp)
+    c1 = layers.Activation('relu')(c1)
+    c1 = layers.AveragePooling2D(pool_size=(2,1),strides=(2,1))(c1)
+    fused = False
+    if use_bn:
+        c1 = layers.BatchNormalization(fused=fused)(c1)
+        
+    c1 = layers.Conv2D(32,kernel_size=(5,1),padding='same',use_bias=False,name='temporal_conv2')(c1)
+    c1 = layers.Activation('relu')(c1)
+    c1 = layers.AveragePooling2D(pool_size=(2,1),strides=(2,1))(c1)
+    if use_bn:
+        c1 = layers.BatchNormalization(fused=fused)(c1)
+    
+    c1 = layers.Conv2D(32,kernel_size=(5,1),padding='same',use_bias=False,name='temporal_conv3')(c1)
+    c1 = layers.Activation('relu')(c1)
+    c1 = layers.AveragePooling2D(pool_size=(2,1),strides=(2,1))(c1)
+    if use_bn:
+        c1 = layers.BatchNormalization(fused=fused)(c1)
+    
+    
+    print(c1)
+    # create layer that is reused 
+    if num_classes==2:
+        clf_out = layers.Dense(1,activation='sigmoid',use_bias=False)
+    else:
+        clf_out = layers.Dense(num_classes,activation='softmax',use_bias=False)
+    
+    classifiers  =[]
+    # these layers have no params, but sharing them makes a better (I guess, since less ops)
+    # computational graph (and summary)
+    
+    #flat_it = layers.Flatten()
+    #drop_it = layers.Dropout(do_ratio)
+    
+    for i in range(numChannels):
+    # Slicing the ith channel:
+        _c1 = layers.Lambda(lambda x: x[:, :, i])(c1)
+        _c1 = layers.Flatten()(_c1)
+        if do_ratio!=0:
+            _c1 = layers.Dropout(do_ratio)(_c1)
+        _c1 = clf_out(_c1)
+        classifiers+=[_c1]
+    # bundle all predictions and form one output.
+    classifiers = layers.Average()(classifiers)
+    return models.Model(inp,classifiers) 
+
+def Channel_Decision_Small_Single_Out(input_shape,network_params):
+    use_bn=network_params['use_bn']
+    do_ratio=network_params['do_ratio']
+    num_classes = network_params['num_classes']
+    
+    inp = layers.Input(input_shape)
+    numChannels = K.int_shape(inp)[2]
+    # bias not needed when using BatchNorm
+    c1 = layers.Conv2D(32,kernel_size=(5,1),strides=(2,1),padding='same',use_bias=False,name='temporal_conv_relu')(inp)
+    c1 = layers.Activation('relu')(c1)
+    if use_bn:
+        c1 = layers.BatchNormalization()(c1)
+    
+    c1 = layers.Conv2D(32,kernel_size=(13,1),padding='same',use_bias=False,name='temporal_conv2')(c1)
+    # if multiple channels are provided take the mean s.t. the amount of extracted spatial information
+    # is minimized as opossed to using spatial filters
+    c1 = layers.Activation('relu')(c1)
+    # (1,35 |7)
+    c1 = layers.AveragePooling2D(pool_size=(25,1),strides=(7,1))(c1)
+    c1 = layers.Activation('relu')(c1)
+    classifiers =[]
+    for i in range(numChannels):
+    # Slicing the ith channel:
+        out = layers.Lambda(lambda x: x[:, :, i])(c1)
+        out = layers.Flatten()(out)
+        if do_ratio!=0:
+            out = layers.Dropout(do_ratio)(out)
+        if num_classes==2:
+            out = layers.Dense(1,activation='sigmoid',use_bias=False)(out)
+        else:
+            out = layers.Dense(num_classes,activation='softmax',use_bias=False)(out) # kernel_constraint=max_norm(.5)
+        classifiers+=[out]
+    
+    # bundle all predictions and form one output.
+    classifiers  = layers.concatenate(classifiers,axis=1)
+    classifiers = layers.Lambda(lambda x: K.mean(x,axis=1))(classifiers)
+    return models.Model(inp,classifiers) 
 
 
 def Channel_Decision_Small(input_shape,network_params):

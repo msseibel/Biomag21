@@ -162,7 +162,7 @@ class draw_random_time_frame(Augmentation_Function):
         if good_samples is not None:
             indices = np.random.randint(good_samples.shape[1],size=batch_size)
             start_time_point = good_samples[np.arange(batch_size),indices]
-            #print(start_time_point.shape)
+            #print(start_time_point+self.frame_length)
         start_time_points_range = [np.arange(sp,sp+self.frame_length) for sp in start_time_point]
         samplesRepeated         = np.repeat(np.arange(batch_size).reshape(batch_size,1),self.frame_length,axis=1)
         return Xbatch[samplesRepeated,np.array(start_time_points_range)],kwargs
@@ -366,7 +366,7 @@ class draw_time_frame(Augmentation_Function):
     def __init__(self):
         super().__init__()
 
-    def __call__(self,Xbatch,dtf_start_time_point,dtf_frame_length,**kwargs):
+    def __call__(self,Xbatch,start_time_point,frame_length,**kwargs):
         """
         Xbatch: subjects,time,channels
         """
@@ -562,6 +562,28 @@ class SlicingGeneratorAugment(keras.utils.Sequence):
         self.numChannels  = self.X.shape[2]
         # contains only the subjects as specified by subjects index
         self.num_subjects = len(subjects) 
+
+        #--------------------------------------------------------------
+        #--------------------------------------------------------------
+        #--------------------------------------------------------------
+        # We want to show from both sites equally often
+        site_types = np.unique(sites)
+        num_sites = len(site_types)
+        # todo: add good criteria when to use weighted site sampling, but outside of Generator
+        if 'site_sampling' in self.network_params.keys() and self.network_params['site_sampling'] and len(subjects)>1 and np.sum(self.mode_sites==1)!=0:
+            # 0 repr site A and 1 repr site B
+            ratio_AtoB = np.sum(self.mode_sites==0)/np.sum(self.mode_sites==1)
+            self.mode_probs = np.ones_like(self.subjects)
+            self.mode_probs[np.where(self.mode_sites==1)] = ratio_AtoB
+            self.mode_probs = self.mode_probs / np.sum(self.mode_probs)
+        else:
+            self.mode_probs = np.ones_like(self.subjects)
+            self.mode_probs = self.mode_probs / np.sum(self.mode_probs)
+        #--------------------------------------------------------------
+        #--------------------------------------------------------------
+        #--------------------------------------------------------------
+        
+        
         
         if self.num_subjects<self.batch_size:
             self.replace=True
@@ -614,7 +636,10 @@ class SlicingGeneratorAugment(keras.utils.Sequence):
         """Generate one batch of data
         """
         # show subjects from site B more often since there are less subjects from this side
-        batch_subjects = self.rng.choice(self.num_subjects,size=self.batch_size,replace=self.replace)
+        batch_subjects = self.rng.choice(self.num_subjects,
+                                         size=self.batch_size,
+                                         replace=self.replace,
+                                        p=self.mode_probs)
         batch_sites = self.mode_sites[batch_subjects]
         batch_good_samples = self.mode_good_samples[batch_subjects]
         if self.debug:
