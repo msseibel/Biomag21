@@ -126,15 +126,18 @@ class DataLoader():
             use_filter = True
         else:
             l_freq = 0
+            
         if 'h_freq' in kwargs.keys():
             h_freq = kwargs['h_freq']
             use_filter = True
         else:
             h_freq = 100
+        
         if 'frame_length' in kwargs.keys():
             frame_length = kwargs['frame_length']
         else:
             frame_length = 256
+            
         if 'num_channels' in kwargs.keys():
             num_channels = kwargs['num_channels']
         else:
@@ -147,24 +150,31 @@ class DataLoader():
         #    num_samples = 76800
         if 'fs' in kwargs.keys():
             fs = kwargs['fs']
+        if 'utility_data' in kwargs.keys():
+            utility_data_path = kwargs['utility_data']
+        else:
+            utility_data_path = "."
+        if 'verbose' in kwargs.keys():
+            verbose = kwargs['verbose']
+        else: 
+            verbose = 0
         
-        
-        
+        X = mne.io.read_raw_fif(filename,verbose=verbose)
+        if fs is not None and X.info['sfreq']!=fs:
+            X.load_data()
+            X.resample(fs)
+                
         # https://mne.tools/stable/auto_examples/time_frequency/plot_time_frequency_global_field_power.html?highlight=bands
         if hasattr(l_freq, '__iter__'): #implies use_filter
             assert len(l_freq)==len(h_freq)
             #logging.info('Extracting multiple frequency bands. This can take a long time.')
-            X = mne.io.read_raw_fif(filename,verbose=0)
-            if fs is not None and X.info['sfreq']!=fs:
-                X.resample(fs)
             bands = np.zeros((num_channels,len(l_freq),X.n_times))
-            
             for i,(lf,hf) in enumerate(zip(l_freq,h_freq)):
                 Xcopy = X.copy()
                 Xcopy.load_data()
                 #logging.info('Frequency Band Extraction uses a small transition bandwidth of .5 Hz.')
                 #logging.info('Using non causal filter. This is unwanted for evoked response detection.')
-                Xcopy.filter(l_freq=lf,h_freq=hf,verbose=0,l_trans_bandwidth=.5,h_trans_bandwidth=.5)
+                Xcopy.filter(l_freq=lf,h_freq=hf,verbose=verbose,l_trans_bandwidth=.5,h_trans_bandwidth=.5)
                 bands[:,i] = Xcopy.get_data()
             num_samples = X.n_times
             
@@ -174,12 +184,9 @@ class DataLoader():
                 nave=1)
         elif use_filter:
             #print('Load and Filter: ',condition, ' ', subject_id)
-            X = mne.io.read_raw_fif(filename,verbose=0)
             X.load_data()
-            X.filter(l_freq=l_freq,h_freq=h_freq,verbose=0)
-        else:
-            #print('Loading: ', condition, ' ', subject_id)
-            X = mne.io.read_raw_fif(filename,verbose=0)
+            X.filter(l_freq=l_freq,h_freq=h_freq,verbose=verbose)
+     
         
         if hasattr(X,'n_times'):
             signal_length = X.n_times
@@ -193,11 +200,9 @@ class DataLoader():
             goods = resample_goods(merged_bads,signal_length=signal_length,frame_length=frame_length)
         else:
             goods = None#==np.arange(len(signal_length))
-            
         site = utils.get_site_from_condition_number(condition,
                     subject_id,
-                    direc= os.path.join(os.getcwd(),
-                    'dataframes','maxwell_and_temporal'))
+                    direc= utility_data_path)
         subjectData = {}
         subjectData['data']        = X
         subjectData['site']        = site
@@ -282,7 +287,7 @@ class DataLoader():
         print('')    
         if use_multiprocessing:
             warnings.warn('Multiprocessing has not been tested.')
-            with mp.Pool(processes=1) as pool:
+            with mp.Pool(processes=2) as pool:
                 results = pool.starmap(self.readData,readDatadicts)
         else:
             results = [self.readData(**subjectkwargs) for subjectkwargs in tqdm(readDatadicts,position=0,leave=True)]
