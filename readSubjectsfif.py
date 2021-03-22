@@ -185,7 +185,7 @@ class DataLoader():
         elif use_filter:
             #print('Load and Filter: ',condition, ' ', subject_id)
             X.load_data()
-            X.filter(l_freq=l_freq,h_freq=h_freq,verbose=verbose)
+            X.filter(l_freq=l_freq,h_freq=h_freq,verbose=verbose,l_trans_bandwidth=.5,h_trans_bandwidth=.5)
      
         
         if hasattr(X,'n_times'):

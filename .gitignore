@@ -2,6 +2,7 @@
 *.ipynb
 *.bak
 !TestBioMagRecordigCondition.ipynb
+cache/
 
 
 

@@ -134,6 +134,7 @@ def _moving_average_ch(data,N,padding=0,alpha=1):
         EMA = alpha*np.mean(data[k:k+N])+(1-alpha)*EMA
         cleaned[k:k+N]=data[k:k+N]-EMA
     return cleaned
+    
 def get_class_labels(tasks):
     mapping = {'dementia':'dem','control':'control',
         'mci':'mci'}
@@ -543,7 +544,7 @@ def load_spm_info(meta_path,subject,condition=None):
     infospm = io.loadmat(meta_path +'\hokuto_{}{}.mat'.format(condition,subject))
     return infospm
     
-def load_spm(conditionGroup_meta,conditionGroup_data,subject,just_meg=True):
+def load_spm(conditionGroup_meta,conditionGroup_data,subject,just_meg=True,asfloat32=False):
     """
     return meg, infospm
     """
@@ -553,9 +554,11 @@ def load_spm(conditionGroup_meta,conditionGroup_data,subject,just_meg=True):
         condition='dementia'
     elif 'mci' in conditionGroup_data:
         condition='mci'
+    elif 'test' in conditionGroup_data:
+        condition='test'
     else:
         raise NameError("name 'condition' is not defined")
-    infospm = load_spm_info(conditionGroup_meta ,subject,condition)
+    infospm = load_spm_info(conditionGroup_meta,subject,condition)#( +'\hokuto_{}{}.mat'.format(condition,subject))
     dataspm = io.loadmat(conditionGroup_data +'\hokuto_{}{}.mat'.format(condition,subject))
     fs=int(load_key_chain(infospm['D'],['Fsample']))
     if fs==1000:
@@ -567,10 +570,71 @@ def load_spm(conditionGroup_meta,conditionGroup_data,subject,just_meg=True):
         type3name = 'magnetometer reference'
         site='B'    
     meg,type2records,type3records = split_channel_groups(dataspm,infospm)
+    if asfloat32:
+        meg = meg.astype(np.float32)
+        type2records = type2records.astype(np.float32)
+        type3records = type3records.astype(np.float32)
     if just_meg:
         return meg, infospm
     else:
         return meg,type2records,type3records, infospm
+
+def make_raw(meg,infospm,down_sample_B=False):
+    """
+    return raw,chanpos,chanori,markers,site
+    """
+    import mne
+    fs=int(load_key_chain(infospm['D'],['Fsample']))
+    site = get_site_from_fs(fs)
+    if down_sample_B and site=='B':
+        meg = meg[:,::2]
+        fs = 1000
+        
+    markers = load_key_chain(infospm['D'],['fiducials','fid','pnt'])/1000
+    chanpos = load_key_chain(infospm['D'],['sensors','meg','chanpos'])/1000
+    chanori = load_key_chain(infospm['D'],['sensors','meg','chanori'])
+    markers[:,[0, 1]] = markers[:,[1, 0]]
+    chanori[:,[0, 1]] = chanori[:,[1, 0]]
+    chanpos[:,[0, 1]] = chanpos[:,[1, 0]] 
+    
+    ch_pos = {'MEG {:03}'.format(ch):chanpos[ch] for ch in range(160)}
+    digmontage = mne.channels.make_dig_montage(
+        nasion=markers[0],
+        lpa=markers[2],
+        rpa=markers[1],
+        hpi=[markers[2],markers[1],markers[0],markers[4],markers[3]],
+        coord_frame='head')
+    from mne.io import constants
+    
+    info = mne.create_info(ch_names=['MEG {:03}'.format(ch) for ch in range(160)], sfreq=fs, ch_types='grad')
+    info.set_montage(digmontage) 
+    raw = mne.io.RawArray(meg, info)
+    #raw.info['line_freq']=50
+    #raw.info['device_info']='site '+site
+    ch_types = constants.FIFF['FIFFV_COIL_KIT_GRAD']
+    for k in range(160):
+        raw.info['chs'][k]['coil_type']=ch_types
+        raw.info['chs'][k]['unit'] = mne.io.kit.constants.FIFF.FIFF_UNIT_T
+        raw.info['chs'][k]['loc']  = np.concatenate([chanpos[k],np.zeros(9)])
+    return raw,chanpos,chanori,markers,site
+
+def make_montage(infospm=None,condition=None,subject=None,meta_path=None):
+    import mne
+    if infospm is None:
+        assert meta_path is not None and condition is not None and subject is not None
+        infospm = load_spm_info(meta_path, subject, condition)
+    markers = load_key_chain(infospm['D'],['fiducials','fid','pnt'])/1000
+    chanpos = load_key_chain(infospm['D'],['sensors','meg','chanpos'])/1000
+    markers[:,[0, 1]] = markers[:,[1, 0]]
+    chanpos[:,[0, 1]] = chanpos[:,[1, 0]]
+    
+    ch_pos = {'MEG {:03}'.format(ch):chanpos[ch] for ch in range(160)}
+    digmontage = mne.channels.make_dig_montage(
+        nasion=markers[0],
+        lpa=markers[2],
+        rpa=markers[1],
+        hpi=[markers[2],markers[1],markers[0],markers[4],markers[3]],
+        coord_frame='head')
 
 
 
