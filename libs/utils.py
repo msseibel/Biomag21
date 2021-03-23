@@ -635,7 +635,7 @@ def make_montage(infospm=None,condition=None,subject=None,meta_path=None):
         rpa=markers[1],
         hpi=[markers[2],markers[1],markers[0],markers[4],markers[3]],
         coord_frame='head')
-
+    return digmontage
 
 
 def get_fiducials(info):
