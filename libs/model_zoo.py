@@ -14,6 +14,7 @@ from tensorflow.keras import backend as K
 from tensorflow.keras import regularizers
 import tensorflow as tf
 import numpy as np
+from tensorflow.keras.layers import Input, Conv2D, MaxPooling2D, GlobalAveragePooling2D, Dense, BatchNormalization, GlobalMaxPooling2D, Activation, Cropping2D, Dropout
 
 def circular_dilated_conv():
     return
@@ -70,6 +71,98 @@ class PairwiseChannelConv(tf.keras.layers.Layer):
             
         return tf.stack(max_pairwise_similarity,axis=1)
 
+
+
+def inception_model(input_shape,network_params):
+    
+    num_classes = network_params['num_classes']
+    num_channels = input_shape[1]
+    x = Input(shape=input_shape, name="eeg_input")
+
+    # Temporal Inception 1
+
+    short_term_1 = Conv2D(filters=24, kernel_size=(1, 1), use_bias=False, padding="same")(x)
+    short_term_1 = BatchNormalization()(short_term_1)
+    short_term_1 = Activation('relu')(short_term_1)
+
+    short_term_2 = Conv2D(filters=16, kernel_size=(3, 1), use_bias=False, padding="same")(x)
+    short_term_2 = BatchNormalization()(short_term_2)
+    short_term_2 = Activation('relu')(short_term_2)
+
+    short_term_3 = Conv2D(filters=16, kernel_size=(5, 1), use_bias=False, padding="same")(x)
+    short_term_3 = BatchNormalization()(short_term_3)
+    short_term_3 = Activation('relu')(short_term_3)
+
+    short_term_4 = MaxPooling2D(pool_size=(3, 1), strides=(1, 1), padding='same')(x)
+    short_term_4 = Conv2D(filters=16, kernel_size=(1, 1), use_bias=False, padding="same")(short_term_4)
+    short_term_4 = BatchNormalization()(short_term_4)
+    short_term_4 = Activation('relu')(short_term_4)
+
+    eeg_after_short = layers.concatenate([short_term_1, short_term_2, short_term_3, short_term_4])
+    eeg_after_short = MaxPooling2D(pool_size=(3, 1), strides=(2, 1))(eeg_after_short)
+
+    # Spatio-Temporal Inception 2
+
+    mid_term_1 = Conv2D(filters=32, kernel_size=(1, num_channels), use_bias=False)(eeg_after_short)
+    mid_term_1 = Cropping2D(cropping=((2, 2), (0, 0)), data_format=None)(mid_term_1)
+    mid_term_1 = BatchNormalization()(mid_term_1)
+    mid_term_1 = Activation('relu')(mid_term_1)
+
+    mid_term_2 = Conv2D(filters=24, kernel_size=(3, num_channels), use_bias=False)(eeg_after_short)
+    mid_term_2 = Cropping2D(cropping=((1, 1), (0, 0)), data_format=None)(mid_term_2)
+    mid_term_2 = BatchNormalization()(mid_term_2)
+    mid_term_2 = Activation('relu')(mid_term_2)
+
+    mid_term_3 = Conv2D(filters=24, kernel_size=(5, num_channels), use_bias=False)(eeg_after_short)
+    mid_term_3 = BatchNormalization()(mid_term_3)
+    mid_term_3 = Activation('relu')(mid_term_3)
+
+    mid_term_4 = MaxPooling2D(pool_size=(3, 1), strides=(1, 1))(eeg_after_short)
+    mid_term_4 = Conv2D(filters=24, kernel_size=(1, num_channels), use_bias=False)(mid_term_4)
+    mid_term_4 = Cropping2D(cropping=((1, 1), (0, 0)), data_format=None)(mid_term_4)
+    mid_term_4 = BatchNormalization()(mid_term_4)
+    mid_term_4 = Activation('relu')(mid_term_4)
+
+    eeg_after_mid = layers.concatenate([mid_term_1, mid_term_2, mid_term_3, mid_term_4])
+    eeg_after_mid = Dropout(0.25, noise_shape=(1, 1, 104))(eeg_after_mid)
+
+    # Spatio-Temporal Inception 3
+
+    long_term_1 = Conv2D(filters=64, kernel_size=(1, 1), use_bias=False, padding="same")(eeg_after_mid)
+    long_term_1 = BatchNormalization()(long_term_1)
+    long_term_1 = Activation('relu')(long_term_1)
+
+    long_term_2 = Conv2D(filters=48, kernel_size=(3, 1), use_bias=False, padding="same")(eeg_after_mid)
+    long_term_2 = BatchNormalization()(long_term_2)
+    long_term_2 = Activation('relu')(long_term_2)
+
+    long_term_3 = Conv2D(filters=48, kernel_size=(5, 1), use_bias=False, padding="same")(eeg_after_mid)
+    long_term_3 = BatchNormalization()(long_term_3)
+    long_term_3 = Activation('relu')(long_term_3)
+
+    long_term_4 = MaxPooling2D(pool_size=(3, 1), strides=(1, 1), padding='same')(eeg_after_mid)
+    long_term_4 = Conv2D(filters=48, kernel_size=(1, 1), use_bias=False, padding="same")(long_term_4)
+    long_term_4 = BatchNormalization()(long_term_4)
+    long_term_4 = Activation('relu')(long_term_4)
+
+    eeg_after_long = layers.concatenate([long_term_1, long_term_2, long_term_3, long_term_4])
+    eeg_after_long = MaxPooling2D(pool_size=(7, 1), strides=(5, 1))(eeg_after_long)
+    eeg_after_long = Dropout(0.25, noise_shape=(1, 1, int(eeg_after_long.shape[3])))(eeg_after_long)
+
+    main = GlobalAveragePooling2D()(eeg_after_long)
+
+    final = Dropout(0.4)(main)
+
+    
+    if num_classes==2:
+        y = layers.Dense(1,activation='sigmoid')(final)
+    else:
+        y = layers.Dense(num_classes,activation='softmax',)(final) # kernel_constraint=max_norm(.5)
+    
+    
+    model = models.Model(x, y)
+
+    return model
     
 """
 # off diag
@@ -337,7 +430,13 @@ def ConnectivityModel(input_shape,network_params):
     
     c1 = layers.Flatten()(c1)
     c1 = layers.Dropout(do_ratio)(c1)
-    c1 = layers.Dense(num_classes,activation='softmax', kernel_constraint=max_norm(.5))(c1)
+    
+    if num_classes==2:
+        c1 = layers.Dense(1,activation='sigmoid')(c1)
+    else:
+        c1 = layers.Dense(num_classes,activation='softmax',)(c1) # kernel_constraint=max_norm(.5)
+        
+    
     return models.Model(inp,c1) 
     
          

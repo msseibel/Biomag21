@@ -544,29 +544,32 @@ class SlicingGeneratorAugment(keras.utils.Sequence):
         self.meta  = np.array(meta['subjects'])
         self.conditions       = np.array([sub_meta['condition'] for sub_meta in self.meta])
         self.subjects_id      = np.array([sub_meta['id'] for sub_meta in self.meta])
+        subject_names = np.array(["{}{:03d}".format(cond,sid) for cond,sid in zip(self.conditions,self.subjects_id)])
+        
         self.X         = data['X']
         self.Y         = data['Y']
         good_samples = np.array([sub_meta['good_samples'] for sub_meta in self.meta])
-        sites      = np.array([int(sub_meta['site']=='B') for sub_meta in self.meta])
+        sites        = np.array([int(sub_meta['site']=='B') for sub_meta in self.meta])
         if len(np.unique(self.Y))>2:
             self.Y = categorical2onehot(self.Y)
         
         
         self.mode_sites = sites[self.subjects]
-        self.mode_Y = self.Y[self.subjects]
+        self.mode_Y     = self.Y[self.subjects]
         self.mode_good_samples = good_samples[self.subjects]
-        
+        mode_subject_names = subject_names[self.subjects]
         
         self.rng = np.random.default_rng()
         self.samples      = self.X.shape[1]
         self.numChannels  = self.X.shape[2]
         # contains only the subjects as specified by subjects index
-        self.num_subjects = len(subjects) 
+        # len(np.unique(subject_names))
+        self.num_subjects = len(subjects)  this is only valid when data was not pre augmented
 
         #--------------------------------------------------------------
         #--------------------------------------------------------------
         #--------------------------------------------------------------
-        # We want to show from both sites equally often
+        # We want to show samples from both sites equally often
         site_types = np.unique(sites)
         num_sites = len(site_types)
         # todo: add good criteria when to use weighted site sampling, but outside of Generator

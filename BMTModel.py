@@ -170,14 +170,14 @@ class RunTraining():
         """
         param: condition_subjects_dict e.g. {'mci':[1,2],'control':np.arange(10),'dementia':[1,2,3]}
         """
-        
-        loader = readSubjects.DataLoader(self.train_path_info,
-            self.dataDir,self.static_data_params['channel_matches'],**kwargs)
-        out = loader.make_Keras_data(condition_subjects_dict,fs=self.static_data_params['fs'],**kwargs)
         data = {}
-        data['X'] = np.transpose(out[0],[0,2,1])
-        data['Y'] = out[1]
-        meta      = out[2]
+        for data_dir in self.dataDirs:
+            loader = readSubjects.DataLoader(self.train_path_info,
+                self.dataDir,self.static_data_params['channel_matches'],**kwargs)
+            out = loader.make_Keras_data(condition_subjects_dict,fs=self.static_data_params['fs'],**kwargs)
+            data['X'] = np.transpose(out[0],[0,2,1])
+            data['Y'] = out[1]
+            meta      = out[2]
         self.data_loaded = True
         return data,meta
         
@@ -230,8 +230,7 @@ class RunTraining():
             print('Valid Patients: \n',np.unique(subjects_valid),
                 '\n In Total: ',len(np.unique(subjects_valid)))
             
-            generator_train = GeneratorCNN.SlicingGeneratorAugment(self.static_data_params,self.network_params,train_augment_pipeline,
-                                                                   debug=False)
+            generator_train = GeneratorCNN.SlicingGeneratorAugment(self.static_data_params,self.network_params,train_augment_pipeline,debug=False)
             generator_valid = GeneratorCNN.SlicingGeneratorAugment(self.static_data_params,self.network_params,valid_augment_pipeline)
             
             generator_train.setData(self.data,self.train_index,self.meta)

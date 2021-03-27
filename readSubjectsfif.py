@@ -98,8 +98,8 @@ class DataLoader():
         self.controlGroup_meta  = os.path.join(self.train_path_meta,'control')
         self.dementiaGroup_meta = os.path.join(self.train_path_meta,'dementia')
         self.mciGroup_meta      = os.path.join(self.train_path_meta,'mci')
-        self.data_dir  = data_dir
-        self.site_as_label=site_as_label
+        self.data_dir           = data_dir
+        self.site_as_label      =site_as_label
         if site_as_label:
             warnings.warn('site as label')
 
