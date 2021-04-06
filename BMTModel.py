@@ -4,7 +4,7 @@ import os
 from scipy import signal,fftpack
 import itertools
 import gc
-from sklearn.model_selection import GroupKFold,train_test_split,KFold, StratifiedKFold
+from sklearn.model_selection import GroupKFold,train_test_split,KFold, StratifiedKFold, StratifiedGroupKFold
 from collections import OrderedDict
 import pandas as pd
 from tensorflow import keras
@@ -55,10 +55,10 @@ class RunTraining():
     def __init__(self,dataDir=r'../cache/raw',
             train_path_info=r'info',static_data_params=None,network_params=None,completeDir=None):
         """
-        dataDir: str
+        dataDir: str | list of str
         """
         
-        self.dataDir = dataDir
+        self.dataDirs = dataDir
         self.train_path_info = train_path_info
         if completeDir is None:
             self.set_output_dir()
@@ -170,14 +170,26 @@ class RunTraining():
         """
         param: condition_subjects_dict e.g. {'mci':[1,2],'control':np.arange(10),'dementia':[1,2,3]}
         """
-        data = {}
+        data = {'X':[],'Y':[]}
+        meta = {'siteAmeta':[],'siteBmeta':[],'subjects':[]}
+        
+        
         for data_dir in self.dataDirs:
             loader = readSubjects.DataLoader(self.train_path_info,
-                self.dataDir,self.static_data_params['channel_matches'],**kwargs)
+                data_dir,self.static_data_params['channel_matches'],**kwargs)
             out = loader.make_Keras_data(condition_subjects_dict,fs=self.static_data_params['fs'],**kwargs)
-            data['X'] = np.transpose(out[0],[0,2,1])
-            data['Y'] = out[1]
-            meta      = out[2]
+            data['X'] += [np.transpose(out[0],[0,2,1])]
+            data['Y'] += [out[1]]
+            meta['siteAmeta'].extend([out[2]['siteAmeta']])
+            meta['siteBmeta'].extend([out[2]['siteBmeta']])
+            meta['subjects'].extend([out[2]['subjects']])
+        data['X'] = np.concatenate(data['X'],axis=0)
+        data['Y'] = np.concatenate(data['Y'],axis=0)
+        meta['subjects'] = np.concatenate(meta['subjects'])
+        print(data['X'].shape)
+        print(data['Y'].shape)
+        print(len(meta['subjects']))
+        
         self.data_loaded = True
         return data,meta
         
@@ -191,24 +203,22 @@ class RunTraining():
         use_class_weights  = self.network_params['use_class_weights']
         fs                 = self.static_data_params['fs']
         standardize        = self.static_data_params['standardize']
-        
-        
-        
+
         if use_class_weights:
             class_weights = class_weight.compute_class_weight('balanced',np.unique(self.data['Y']),self.data['Y'])
             class_weights = dict(enumerate(class_weights))
         else:
-            class_weights = dict(enumerate([1,1]))
+            num_classes   = len(np.unique(self.data['Y']))
+            class_weights = dict(enumerate(np.ones(num_classes)))
         print('class_weights: \n',class_weights)
         
-        # GroupKFold is *not* necessary since each subject is considered a training sample
-        # But StratifiedKFold is necessary to account for the imbalance by taking an equal percentage
-        # of samples from each class
-        gkf_valid = StratifiedKFold(n_splits=int(np.min([len(np.unique(subjects_train_valid))-1,10])),shuffle=True)
+        # StratifiedGroupKFold is necessary since each subject has multiple pre augmentations
+        # As of 3/21/27 this method is part of the nightly package of sklearn
+        gkf_valid = StratifiedGroupKFold(n_splits=10, shuffle=True)
         
         print('num splits: ',gkf_valid.get_n_splits())
         self.train_index,self.valid_index = next(gkf_valid.split(np.ones((len(subjects_train_valid),1)),
-            self.data['Y'], subjects_train_valid))
+            y=self.data['Y'], groups=subjects_train_valid))
         
         subjects_valid = subjects_train_valid[self.valid_index]
         subjects_train = subjects_train_valid[self.train_index]
@@ -236,13 +246,6 @@ class RunTraining():
             generator_train.setData(self.data,self.train_index,self.meta)
             generator_valid.setData(self.data,self.valid_index,self.meta)
             
-            callbacks_list.extend([keras.callbacks.ModelCheckpoint(os.path.join(self.completeDir,'cp.ckpt'),
-                                       monitor="val_mci_dem_F1",
-                                       save_best_only=True,
-                                       mode='max')])
-            callbacks_list.extend([keras.callbacks.CSVLogger(self.results_directory / 'log.csv', separator=",", append=False)])
-            callbacks_list.extend([keras.callbacks.TensorBoard(self.results_directory / 'logs', update_freq=100)])
-            
             train_history = model.fit(generator_train,validation_data=generator_valid, 
                 epochs=self.network_params['numTrainEpochs'],
                 callbacks=callbacks_list,
@@ -250,6 +253,14 @@ class RunTraining():
                 workers=self.network_params['workers'],
                 use_multiprocessing=self.network_params['multiprocessing'],
                 max_queue_size=30)
+        plt.figure()
+        plt.plot(train_history.history['loss'],label="Loss on training data")
+        plt.plot(train_history.history['val_loss'],label="Loss on validation data")
+        plt.xlabel("Epochs")
+        plt.ylabel("Loss")
+        plt.legend()
+        plt.show()
+        
         print('Load Best Model')
         model.load_weights(os.path.join(self.completeDir,'cp.ckpt','variables','variables'))
         return model
@@ -355,7 +366,7 @@ class RunTraining():
                 fcopy.write(l)
         print('')
 
-            #f.write('Used Data: 'self.dataDir+'\n')
+            #f.write('Used Data: 'self.dataDirs+'\n')
         try:        
             with open(os.path.join(self.completeDir,'train_aug_pipe.pkl'), 'wb') as output:
                 pickle.dump(train_augment_pipeline, output, pickle.HIGHEST_PROTOCOL)
@@ -401,13 +412,22 @@ class RunTraining():
         
         # If start_main runs up to this point function can not be called again.
         with open(os.path.join(self.completeDir,'readme.txt'),'w') as f:
-            f.write('Used Data: '+self.dataDir+'\n')
-            
+            f.write('Used Data: '+str(self.dataDirs)+'\n')
+        
+        
+        callbacks_list.extend([keras.callbacks.ModelCheckpoint(os.path.join(self.completeDir,'cp.ckpt'),
+                               monitor="val_loss",
+                               save_best_only=True,
+                               mode='min',verbose=1)])
+
+
         for k in range(n_folds):
             print('#########')
             fold_dir = 'fold_'+str(k)
             subdir = os.path.join(self.completeDir,fold_dir)
             self.results_directory = Path(os.path.join(self.completeDir,fold_dir))
+            callbacks_list.extend([keras.callbacks.CSVLogger(self.results_directory / 'log.csv', separator=",", append=False)])
+            callbacks_list.extend([keras.callbacks.TensorBoard(self.results_directory / 'logs', update_freq=100)])
             with open(os.path.join(self.completeDir,fold_dir,'train_subjects.json'),'r') as f:
                 condition_subjects_dict_train = json.load(f)
             model, subjects_train_valid = self.prepare_fold(condition_subjects_dict_train,network,metrics=metrics)
@@ -463,6 +483,15 @@ class RunTraining():
         model, subjects_train_valid = self.prepare_fold(condition_subjects_dict_train,
                                                         network,
                                                         metrics=metrics)
+        
+        callbacks_list.extend([keras.callbacks.ModelCheckpoint(os.path.join(self.completeDir,'cp.ckpt'),
+                           monitor="val_loss",
+                           save_best_only=True,
+                           mode='min',verbose=1)])
+        callbacks_list.extend([keras.callbacks.CSVLogger(self.results_directory / 'log.csv', separator=",", append=False)])
+        log_dir = self.results_directory / 'logs' / datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        callbacks_list.extend([keras.callbacks.TensorBoard(log_dir, update_freq=100)])
+        
         model= self.startTrainFold(model,
                                    subjects_train_valid,
                                    train_augment_pipeline,
@@ -593,7 +622,7 @@ class RunTraining():
         
             with open(self.results_directory / subject_group,'r') as f:
                 condition_subjects_dict_test = json.load(f)
-            self.data,self.meta = self.assembleLoad(condition_subjects_dict,**readSubjects_params)         
+            self.data,self.meta = self.assembleLoad(condition_subjects_dict_test,**readSubjects_params)         
             self.standardizeData(self.static_data_params['standardize'],
                                  np.arange(len(self.data['Y'])))
             X = self.data['X']
@@ -614,8 +643,11 @@ class RunTraining():
             # select a set of background examples to take an expectation over
             background += [Xframes]
             # explain predictions of the model on four images
-        e = shap.DeepExplainer(model, background)    
-        return e
+        background = np.array(background)
+        print(background.shape)
+        explain_shap = shap.DeepExplainer(model, background[:,:,:,np.newaxis])
+        explain_grad = shap.GradientExplainer(model,background[:,:,:,np.newaxis],batch_size=1)
+        return explain_shap, explain_grad
     
     def evaluate3classes(self,ylabels,preds_soft,fold,metrics):    
         preds = np.argmax(np.mean(preds_soft,axis=1),axis=-1)

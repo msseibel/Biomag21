@@ -421,12 +421,11 @@ def ConnectivityModel(input_shape,network_params):
     if use_bn:
         c1 = layers.BatchNormalization()(c1)    
     # square
-    c1 = layers.Activation(K.square)(c1)
+
     # (1,35 |7)
-    c1 = layers.AveragePooling2D(pool_size=(25,1),strides=(7,1))(c1)
+    c1 = layers.MaxPooling2D(pool_size=(25,1),strides=(7,1))(c1)
     # not existent
     #c1 = layers.Conv2D(128,kernel_size=(1,13),padding='same', kernel_constraint=max_norm(2.),use_bias=True)(c1)
-    c1 = layers.Activation(K.log)(c1)
     
     c1 = layers.Flatten()(c1)
     c1 = layers.Dropout(do_ratio)(c1)
@@ -1460,12 +1459,14 @@ def ShallowConvNetMultiClass(input_shape,network_params):
     print('numChannels',numChannels)
     
     # 
-    c1 = layers.Conv2D(32,kernel_size=(5,1),strides=(2,1),padding='same',use_bias=~use_bn,name='temporal_conv_relu')(inp)
+    c1 = layers.Conv2D(16,kernel_size=(5,1),strides=(2,1),padding='same',use_bias=~use_bn,name='temporal_conv_relu',activation="relu")(inp)
     if use_bn:
         c1 = layers.BatchNormalization()(c1)
-    c1 = layers.Activation('relu')(c1)
-    c1 = layers.Conv2D(32,kernel_size=(13,1),padding='same',use_bias=True,name='temporal_conv')(c1)
-    c1 = layers.Conv2D(32,kernel_size=(1,numChannels),padding='valid',use_bias=True,name='spatial_conv')(c1)    
+    c1 = layers.Conv2D(16,kernel_size=(13,1),padding='same',use_bias=True,name='temporal_conv',activation="relu")(c1)
+    if use_bn:
+        c1 = layers.BatchNormalization()(c1)
+    
+    c1 = layers.Conv2D(16,kernel_size=(1,numChannels),padding='valid',use_bias=True,name='spatial_conv')(c1)    
     # square
     c1 = layers.Activation(K.square)(c1)
     # (1,35 |7)
@@ -1818,7 +1819,7 @@ def EEGNet(input_shape,network_params={'F1':32,'F2':32,'do_ratio':.25,'depth_mul
 
 
 def EEGNetLawhern(input_shape, 
-             dropoutRate = 0.5, F1 = 8, 
+             dropoutRate = 0.5, F1 = 16, 
              D = 2, F2 = 16, norm_rate = 0.25, 
              dropoutType = 'Dropout',
              network_params={}):
@@ -1905,14 +1906,14 @@ def EEGNetLawhern(input_shape,
                                    depthwise_constraint = max_norm(1.))(block1)
     block1       = layers.BatchNormalization()(block1)
     block1       = layers.Activation('elu')(block1)
-    block1       = layers.AveragePooling2D((1, 4))(block1)
+    block1       = layers.MaxPooling2D((1, 4))(block1)
     block1       = dropoutType(dropoutRate)(block1)
     
     block2       = layers.SeparableConv2D(F2, (1, 16),
                                    use_bias = False, padding = 'same')(block1)
     block2       = layers.BatchNormalization()(block2)
     block2       = layers.Activation('elu')(block2)
-    block2       = layers.AveragePooling2D((1, 8))(block2)
+    block2       = layers.MaxPooling2D((1, 8))(block2)
     block2       = dropoutType(dropoutRate)(block2)
         
     flatten      = layers.Flatten(name = 'flatten')(block2)

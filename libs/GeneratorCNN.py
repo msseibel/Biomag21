@@ -7,7 +7,10 @@ from random import seed
 from random import random
 from typing import Union
 import warnings
-
+import scipy
+from scipy import signal
+            
+        
 def popartifact(time_axis,height,tau,when):    
     artifact = height*np.exp(-(time_axis-when)/tau)*(np.sign(time_axis-when)+1)/2
     return artifact
@@ -82,7 +85,113 @@ class meanstd(Augmentation_Function):
         Xtmp = Xtmp-np.mean(Xtmp,axis=-1,keepdims=True)
         return Xtmp/np.std(Xtmp,axis=-1,keepdims=True)
 
+class randomize_shared_phase(Augmentation_Function):
+    def __init__(self, max_delta_phase, freq_selective=False,frame_length=512,fs=256):
+        """
+        max_delta_phase: value from [0,pi]
+        sampling range of phases is then [-max_delta_phase,max_delta_phase]
+        The larger max_delta_phase is the more dissimilar (cosine similarity) 
+        the signal will be wrt the original signal.
+        """
+        self.max_delta_phase = max_delta_phase
+        self.frame_length    = frame_length
+        self.fs = fs
+        self.freq_selective = freq_selective
+        super().__init__()
+        
+    def on_epoch_end(self):
+        if self.freq_selective:
+            center_freq = np.random.uniform(8,13)
+            freq_width = 4
+            df = self.fs / frame_length
+            gauss = signal.gaussian(M=self.frame_length,std=freq_width/df)
+            kernel = np.zeros(self.frame_length)
+            kernel[int(center_freq/df)]  = .5
+            kernel[-int(center_freq/df)] = .5
+            self.kernel = 1-np.correlate(kernel,gauss,mode='same')
+            print("New center frequency: ",center_freq)
+        else:
+            self.kernel = np.ones(self.frame_length)
+        self.kernel = self.kernel.reshape(1,-1,1)
+        
+    def __call__(self,Xbatch,**kwargs):
+        """
+        
+        currently an even frame_length is assumed.
+        -----------
+        params: Xbatch: [batch_size, frame_length, channels] 
+        """
+        batch_size, N, num_ch = Xbatch.shape
+        Xbatch = np.fft.fft(Xbatch,axis=1)
+        true_angle = np.angle(Xbatch)
+        angle = self.max_delta_phase*np.random.uniform(-1,1,size=batch_size*N).reshape(batch_size,N,1)
+        angle = true_angle + self.kernel*angle
+        angle[:,0] = np.pi
+        
+        # for a real signal the phase is complex conjugated
+        phase = np.cos(angle)+ 1j*np.sin(angle)
+        # slicing for even frame_length
+        phase[:,1:int(N/2)+1] = np.flip(np.conj(phase[:,int(N/2):]),axis=-1)
+        phase[:,0] = 0
+        Xbatch = np.abs(Xbatch)*phase
+        # debug: imaginary part must be much smaller then real part (~ < 1e-20)
+        # np.abs(np.fft.ifft(recon)).real[0].sum(),np.abs(np.fft.ifft(recon)).imag[0].sum()
+        return np.fft.ifft(Xbatch).real, kwargs
 
+class randomize_uncorrelated_phase(Augmentation_Function):
+    def __init__(self, max_delta_phase, freq_selective=False,frame_length=512,fs=256):
+        """
+        max_delta_phase: value from [0,pi]
+        sampling range of phases is then [-max_delta_phase,max_delta_phase]
+        The larger max_delta_phase is the more dissimilar (cosine similarity) the signal will be.
+        
+        This augmentation will destroy phase based connectivity across channels
+        """
+        self.max_delta_phase = max_delta_phase
+        self.frame_length    = frame_length
+        self.fs = fs
+        self.freq_selective = freq_selective
+        super().__init__()
+        
+    def on_epoch_end(self):
+        if self.freq_selective:
+            center_freq = np.random.uniform(8,13)
+            freq_width = 4
+            df = self.fs / frame_length
+            gauss = signal.gaussian(M=self.frame_length,std=freq_width/df)
+            kernel = np.zeros(self.frame_length)
+            kernel[int(center_freq/df)]  = .5
+            kernel[-int(center_freq/df)] = .5
+            self.kernel = 1-np.correlate(kernel,gauss,mode='same')
+        else:
+            self.kernel = np.ones(self.frame_length)
+        self.kernel = self.kernel.reshape(1,-1,1)
+        
+    def __call__(self,Xbatch,**kwargs):
+        """
+        currently an even frame_length is assumed.
+        -----------
+        params: Xbatch: [batch_size, frame_length, channels] 
+        """
+        N = Xbatch.shape[1]
+        
+        Xbatch = np.fft.fft(Xbatch,axis=1)
+        true_angle = np.angle(Xbatch)
+        angle = self.max_delta_phase*np.random.uniform(-1,1,size=np.prod(Xbatch.shape)).reshape(Xbatch.shape)
+        angle = true_angle + self.kernel*angle
+        angle[:,0] = np.pi
+        # for a real signal the phase is complex conjugated
+        phase = np.cos(angle)+ 1j*np.sin(angle)
+        # slicing for even frame_length
+        phase[:,1:int(N/2)+1] = np.flip(np.conj(phase[:,int(N/2):]),axis=-1)
+        phase[:,0] = 0
+        Xbatch = np.abs(Xbatch)*phase
+        # debug: imaginary part must be much smaller then real part (~ < 1e-20)
+        # np.abs(np.fft.ifft(recon)).real[0].sum(),np.abs(np.fft.ifft(recon)).imag[0].sum()
+        return np.fft.ifft(Xbatch).real, kwargs
+
+            
+    
 class additive_correlated_noise(Augmentation_Function):
     def __init__(self,sigma_noise=0.01):
         self.sigma_noise = sigma_noise
@@ -99,6 +208,7 @@ class additive_correlated_noise(Augmentation_Function):
         correlated_noise = np.reshape(np.random.randn(Xbatch.shape[1])*self.sigma_noise,[1,Xbatch.shape[1],1])
         Xbatch = Xbatch+correlated_noise
         return Xbatch, kwargs 
+        
         
 #f,t,Sxx = filter_sphara(xtmp, points3Dtmp, trilisttmp,patient,sphara_filter_spec)
 class apply_sphara_filter(Augmentation_Function):
@@ -155,6 +265,7 @@ class draw_random_time_frame(Augmentation_Function):
         Xbatch.shape: (batch_size,time_steps,channels)
         good_samples: (batch_size,time_steps-frame_length)
         see readSubjectsfif for how to create good_samples
+        returns: (batch_size,frame_length,channels)
         """
         trial_length = Xbatch.shape[1]
         batch_size = len(Xbatch)
@@ -564,7 +675,7 @@ class SlicingGeneratorAugment(keras.utils.Sequence):
         self.numChannels  = self.X.shape[2]
         # contains only the subjects as specified by subjects index
         # len(np.unique(subject_names))
-        self.num_subjects = len(subjects)  this is only valid when data was not pre augmented
+        self.num_subjects = len(subjects)  # this is only valid when data was not pre augmented
 
         #--------------------------------------------------------------
         #--------------------------------------------------------------
