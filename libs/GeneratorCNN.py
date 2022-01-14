@@ -97,6 +97,7 @@ class randomize_shared_phase(Augmentation_Function):
         self.frame_length    = frame_length
         self.fs = fs
         self.freq_selective = freq_selective
+        self._debug = True
         super().__init__()
         
     def on_epoch_end(self):
@@ -122,6 +123,8 @@ class randomize_shared_phase(Augmentation_Function):
         params: Xbatch: [batch_size, frame_length, channels] 
         """
         batch_size, N, num_ch = Xbatch.shape
+        TIME_AXIS = 1
+        
         Xbatch = np.fft.fft(Xbatch,axis=1)
         true_angle = np.angle(Xbatch)
         angle = self.max_delta_phase*np.random.uniform(-1,1,size=batch_size*N).reshape(batch_size,N,1)
@@ -131,13 +134,18 @@ class randomize_shared_phase(Augmentation_Function):
         # for a real signal the phase is complex conjugated
         phase = np.cos(angle)+ 1j*np.sin(angle)
         # slicing for even frame_length
-        phase[:,1:int(N/2)+1] = np.flip(np.conj(phase[:,int(N/2):]),axis=-1)
+        phase[:,1:int(N/2)+1] = np.flip(np.conj(phase[:,int(N/2):]),axis=TIME_AXIS) 
         phase[:,0] = 0
         Xbatch = np.abs(Xbatch)*phase
+        if self._debug:
+            im_to_real =  np.abs(np.fft.ifft(recon)).imag[0].sum()/np.abs(np.fft.ifft(recon)).real[0].sum()
+            assert mi_to_real < 1e-1,("ratio im / real = {}".format(im_to_real))
+            self._debug = False
         # debug: imaginary part must be much smaller then real part (~ < 1e-20)
         # np.abs(np.fft.ifft(recon)).real[0].sum(),np.abs(np.fft.ifft(recon)).imag[0].sum()
         return np.fft.ifft(Xbatch).real, kwargs
 
+    
 class randomize_uncorrelated_phase(Augmentation_Function):
     def __init__(self, max_delta_phase, freq_selective=False,frame_length=512,fs=256):
         """

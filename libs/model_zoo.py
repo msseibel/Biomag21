@@ -1924,6 +1924,121 @@ def EEGNetLawhern(input_shape,
     
     return models.Model(inputs=input1, outputs=softmax)
     
+    
+    
+
+
+def EEGNetLawhernTransfer(input_shape, 
+             dropoutRate = 0.5, F1 = 32, 
+             D = 2, code_dim = 208, norm_rate = 0.25, 
+             dropoutType = 'Dropout',
+             network_params={}):
+    #(nb_classes, Chans = 64, Samples = 128, dropoutRate = 0.5, kernLength = 64, F1 = 8,  D = 2, F2 = 16, norm_rate = 0.25, dropoutType = 'Dropout')
+    """ Keras Implementation of EEGNet
+    http://iopscience.iop.org/article/10.1088/1741-2552/aace8c/meta
+    Note that this implements the newest version of EEGNet and NOT the earlier
+    version (version v1 and v2 on arxiv). We strongly recommend using this
+    architecture as it performs much better and has nicer properties than
+    our earlier version. For example:
+        
+        1. Depthwise Convolutions to learn spatial filters within a 
+        temporal convolution. The use of the depth_multiplier option maps 
+        exactly to the number of spatial filters learned within a temporal
+        filter. This matches the setup of algorithms like FBCSP which learn 
+        spatial filters within each filter in a filter-bank. This also limits 
+        the number of free parameters to fit when compared to a fully-connected
+        convolution. 
+        
+        2. Separable Convolutions to learn how to optimally combine spatial
+        filters across temporal bands. Separable Convolutions are Depthwise
+        Convolutions followed by (1x1) Pointwise Convolutions. 
+        
+    
+    While the original paper used Dropout, we found that SpatialDropout2D 
+    sometimes produced slightly better results for classification of ERP 
+    signals. However, SpatialDropout2D significantly reduced performance 
+    on the Oscillatory dataset (SMR, BCI-IV Dataset 2A). We recommend using
+    the default Dropout in most cases.
+        
+    Assumes the input signal is sampled at 128Hz. If you want to use this model
+    for any other sampling rate you will need to modify the lengths of temporal
+    kernels and average pooling size in blocks 1 and 2 as needed (double the 
+    kernel lengths for double the sampling rate, etc). Note that we haven't 
+    tested the model performance with this rule so this may not work well. 
+    
+    The model with default parameters gives the EEGNet-8,2 model as discussed
+    in the paper. This model should do pretty well in general, although it is
+	advised to do some model searching to get optimal performance on your
+	particular dataset.
+    We set F2 = F1 * D (number of input filters = number of output filters) for
+    the SeparableConv2D layer. We haven't extensively tested other values of this
+    parameter (say, F2 < F1 * D for compressed learning, and F2 > F1 * D for
+    overcomplete). We believe the main parameters to focus on are F1 and D. 
+    Inputs:
+        
+      nb_classes      : int, number of classes to classify
+      Chans, Samples  : number of channels and time points in the EEG data
+      dropoutRate     : dropout fraction
+      kernLength      : length of temporal convolution in first layer. We found
+                        that setting this to be half the sampling rate worked
+                        well in practice. For the SMR dataset in particular
+                        since the data was high-passed at 4Hz we used a kernel
+                        length of 32.     
+      F1, F2          : number of temporal filters (F1) and number of pointwise
+                        filters (F2) to learn. Default: F1 = 8, F2 = F1 * D. 
+      D               : number of spatial filters to learn within each temporal
+                        convolution. Default: D = 2
+      dropoutType     : Either SpatialDropout2D or Dropout, passed as a string.
+    """
+    Chans = input_shape[1]
+    Samples = input_shape[0]
+    kernLength = 64
+    use_bn=network_params['use_bn']
+    do_ratio=network_params['do_ratio']
+    num_classes = network_params['num_classes']
+    
+    if dropoutType == 'SpatialDropout2D':
+        dropoutType = layers.SpatialDropout2D
+    elif dropoutType == 'Dropout':
+        dropoutType = layers.Dropout
+    else:
+        raise ValueError('dropoutType must be one of SpatialDropout2D '
+                         'or Dropout, passed as a string.')
+    
+    input1   = layers.Input(shape = input_shape)
+    block1  = layers.Permute([2,1,3])(input1 )
+    ##################################################################
+    block1       = layers.Conv2D(F1, (1, kernLength), padding = 'same',
+                                   use_bias = False)(block1)
+    block1       = layers.BatchNormalization()(block1)
+    block1       = layers.DepthwiseConv2D((Chans, 1), use_bias = False, 
+                                   depth_multiplier = D,
+                                   depthwise_constraint = max_norm(1.))(block1)
+    block1       = layers.BatchNormalization()(block1)
+    block1       = layers.Activation('elu')(block1)
+    block1       = layers.MaxPooling2D((1, 4))(block1)
+    block1       = dropoutType(dropoutRate)(block1)
+    
+    block2       = layers.SeparableConv2D(code_dim, (1, 16),
+                                   use_bias = False, padding = 'same')(block1)
+    block2       = layers.BatchNormalization()(block2)
+    block2       = layers.Activation('elu')(block2)
+    block2       = layers.MaxPooling2D((1, 8))(block2)
+    block2       = dropoutType(dropoutRate)(block2)
+        
+    code         = layers.GlobalMaxPooling2D(name='code')(block2)
+    
+    if num_classes>2:
+        dense        = layers.Dense(num_classes, name = 'dense', 
+                             kernel_constraint = max_norm(norm_rate))(code)
+        output       = layers.Activation('softmax', name = 'softmax')(dense)
+    else:
+        output       = layers.Dense(1, name='dense',activation='sigmoid')(code)
+        
+    return models.Model(inputs=input1, outputs=output)
+
+
+    
 def makeLSTM(input_shape):
     # only 1 channel can be processed
     inp   = layers.Input(input_shape)
