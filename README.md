@@ -3,7 +3,7 @@
 The BIOMAG21 dataset contains subjects which were recorded on two different recordings sites. We call these sites A and B. Subjects have the following: healthy (HC), dementia (DEM) and mild cognitive impaired MCI.
 Sites A and B both have a KIT 160 channel MEG device, but the channels are named differently and the position of the channels can not be perfectly aligned one-to-one. I.e. for a good assignment one would need to drop some MEG channels.
 
-We propose to use signal subspace separation (SSS) to obtain magnetic multipoles which do not depend on the MEG device. Since the multipoles have an exponential power distribution we can not directly use them for our CNN. Instead we transform the multipoles back to a common MEG device (reference frame).
+We propose to use signal subspace separation (SSS) to obtain magnetic multipoles which do not depend on the MEG device (see `libs/maxwell_site_transform.py`). Since the multipoles have an exponential power distribution we can not directly use them for our CNN. Instead we transform the multipoles back to a common MEG device (reference frame).
 
 Afterwards we test how good the SSS approach worked by asking a CNN to identify the original recording site.
 
