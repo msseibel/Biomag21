@@ -1,4 +1,4 @@
-# Biomag21
+# Converting MEG data across devices 
 
 **Disclaimer**: To use this repository you must first download the BIOMAG21 Dementia screening dataset. The core file of this repository is `libs/maxwell_site_transform.py`. It contains the implementation of the proposed method of transforming MEG data from one recording site to another. Especially the notebooks are not bug-free but can be used as a starting point for testing the subsequently applied neural network.
 
